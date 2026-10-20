@@ -1,0 +1,27 @@
+{
+  "status": "ok",
+  "message": {
+    "items": [
+      {
+        "DOI": "10.1037/1089-2680.2.3.271",
+        "type": "journal-article",
+        "title": ["The Emerging Field of Emotion Regulation: An Integrative Review"],
+        "author": [{"family": "Gross", "given": "James J."}],
+        "issued": {"date-parts": [[1998, 9]]}
+      },
+      {
+        "DOI": "10.1007/978-3-030-00000-0_1",
+        "type": "book-chapter",
+        "title": ["Self-Distancing"],
+        "subtitle": ["Theory, Research, and <i>Current</i> Directions"],
+        "author": [{"family": "Kross", "given": "Ethan"}],
+        "issued": {"date-parts": [[2016]]}
+      },
+      {
+        "DOI": "10.9999/no-title",
+        "type": "journal-article",
+        "issued": {"date-parts": [[2000]]}
+      }
+    ]
+  }
+}

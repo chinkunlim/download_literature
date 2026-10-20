@@ -1,12 +1,16 @@
-"""Command-line entrypoint for downloading literature PDFs.
+"""Command-line entrypoint: APA reference list → verified JSON → PDFs → report, in one command.
 
 Usage:
-    uv run fetch-literature                      # open access first, then publisher via Chrome
-    uv run fetch-literature --no-browser         # open access only (no Chrome, no sign-in)
-    uv run fetch-literature --only Gross_1998_RGP,Webb_2012_PsychBull
+    uv run fetch-literature                     # uses DATA_DIR/input/references.txt (or .md / .json)
+    uv run fetch-literature --input my_list.txt # any APA list (.txt / .md) or converted .json
+    uv run fetch-literature --convert-only      # only APA → references.json, no download
+    uv run fetch-literature --no-browser        # open access only (no Chrome, no sign-in)
+    uv run fetch-literature --only Gross_1998_EmergingField
 
-Reads `DATA_DIR/input/references.json` (or `--refs`), saves PDFs and `report.md` in
-`DATA_DIR/output/literature/`, and prints the report.
+Steps: an APA list is split, parsed and confirmed on Crossref, then written to `<list>.json` (keys,
+extra URLs and kinds from an earlier run are kept). Every reference is then downloaded (open access
+first, then the publisher through Chrome / OpenAthens). PDFs and `report.md` go to
+`DATA_DIR/output/literature/`.
 """
 
 from __future__ import annotations
@@ -19,37 +23,46 @@ from pathlib import Path
 import httpx
 
 from download_literature.adapters.literature.browser import BrowserPublisherFetcher
-from download_literature.adapters.literature.files import FilePdfStore, load_references
+from download_literature.adapters.literature.crossref import CrossrefResolver
+from download_literature.adapters.literature.files import (
+    FilePdfStore,
+    find_reference_list,
+    load_references,
+    save_references,
+)
 from download_literature.adapters.literature.http_pdf import HttpPdfFetcher
 from download_literature.adapters.literature.openalex import OpenAlexFinder
 from download_literature.adapters.literature.pdf_text import PypdfTextReader
 from download_literature.config.logging_setup import setup_logging
 from download_literature.config.settings import AppConfig, load_config
-from download_literature.domain.literature import DownloadStatus, Reference
+from download_literature.domain.apa import split_entries
+from download_literature.domain.literature import ConversionNote, DownloadStatus, Reference
 from download_literature.services.literature import PublisherFetcher, Sources, download_all, render_report
+from download_literature.services.reference_builder import build_references, merge_with_existing
 
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) download-literature/0.1 (academic use)"
 
 
-def _parse_args(argv: list[str] | None, config: AppConfig) -> argparse.Namespace:
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     """Parse command-line options.
 
     Args:
         argv: Arguments; defaults to `sys.argv[1:]`.
-        config: Settings providing default paths.
 
     Returns:
         Parsed options.
     """
-    parser = argparse.ArgumentParser(description="Download the PDFs of a reference list")
+    parser = argparse.ArgumentParser(description="Convert an APA reference list and download the PDFs")
     parser.add_argument(
+        "--input",
         "--refs",
         type=Path,
-        default=config.input_dir / "references.json",
-        help="JSON reference list (default: DATA_DIR/input/references.json)",
+        default=None,
+        help="APA list (.txt/.md) or converted .json (default: DATA_DIR/input/references.txt|.md|.json)",
     )
+    parser.add_argument("--convert-only", action="store_true", help="only convert the APA list to JSON")
     parser.add_argument(
         "--no-browser", action="store_true", help="open access only; skip the publisher route"
     )
@@ -72,19 +85,42 @@ def _select(refs: list[Reference], only: str) -> list[Reference]:
     return [r for r in refs if not keys or r.key in keys]
 
 
-def _build_sources(stack: ExitStack, config: AppConfig, args: argparse.Namespace) -> Sources:
-    """Create the HTTP client, OA finder, optional Chrome fetcher and PDF store.
+def _load_list(path: Path, client: httpx.Client) -> tuple[list[Reference], list[ConversionNote]]:
+    """Load a reference list, converting an APA text list to JSON first.
 
     Args:
-        stack: Exit stack that closes the client and browser when the batch ends.
+        path: `.txt` / `.md` APA list or `.json` reference file.
+        client: HTTP client for Crossref.
+
+    Returns:
+        (references, conversion notes); notes are empty for a JSON input.
+    """
+    if path.suffix.lower() == ".json":
+        return load_references(path), []
+    entries = split_entries(path.read_text(encoding="utf-8"))
+    refs, notes = build_references(entries, CrossrefResolver(client))
+    json_path = path.with_suffix(".json")
+    if json_path.is_file():
+        refs = merge_with_existing(refs, load_references(json_path))
+    save_references(json_path, refs)
+    logger.info("apa list converted entries=%d refs=%d json=%s", len(entries), len(refs), json_path)
+    return refs, notes
+
+
+def _build_sources(
+    stack: ExitStack, client: httpx.Client, config: AppConfig, args: argparse.Namespace
+) -> Sources:
+    """Create the OA finder, HTTP fetcher, optional Chrome fetcher and PDF store.
+
+    Args:
+        stack: Exit stack that closes the browser when the batch ends.
+        client: Shared HTTP client.
         config: Settings (paths, OpenAthens domain, credentials).
         args: Parsed options (`no_browser`, `wait`).
 
     Returns:
         The wired download sources.
     """
-    headers = {"User-Agent": USER_AGENT}
-    client = stack.enter_context(httpx.Client(headers=headers, follow_redirects=True, timeout=60))
     publisher: PublisherFetcher | None = None
     if not args.no_browser:
         login = (config.library_email, config.library_password)
@@ -96,23 +132,46 @@ def _build_sources(stack: ExitStack, config: AppConfig, args: argparse.Namespace
     return Sources(OpenAlexFinder(client), HttpPdfFetcher(client), publisher, store, PypdfTextReader())
 
 
+def _print_conversion(path: Path, refs: list[Reference], notes: list[ConversionNote]) -> None:
+    """Print the result of a convert-only run.
+
+    Args:
+        path: Input list.
+        refs: Converted references.
+        notes: Conversion notes.
+    """
+    print(f"Converted {len(refs)} references -> {path.with_suffix('.json')}")
+    for note in notes:
+        print(f"- {note.message}: {note.citation}")
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Download every reference and print the report.
+    """Convert the reference list, download every reference and print the report.
 
     Args:
         argv: Command-line arguments; defaults to `sys.argv[1:]`.
 
     Returns:
-        0 when nothing failed, 1 when at least one reference failed.
+        0 when nothing failed, 1 when at least one reference failed, 2 when no list was found.
     """
     config = load_config()
-    args = _parse_args(argv, config)
+    args = _parse_args(argv)
     setup_logging(config.log_level, config.logs_dir if config.log_to_file else None)
-    refs = _select(load_references(args.refs), args.only)
-    logger.info("fetch start refs=%s count=%d browser=%s", args.refs, len(refs), not args.no_browser)
+    path = args.input or find_reference_list(config.input_dir)
+    if path is None or not path.is_file():
+        print(f"No reference list found. Put references.txt (APA) in {config.input_dir} or use --input.")
+        return 2
+    logger.info("fetch start input=%s browser=%s", path, not args.no_browser)
     with ExitStack() as stack:
-        outcomes = download_all(refs, _build_sources(stack, config, args))
-    report = render_report(outcomes)
+        client = stack.enter_context(
+            httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=60)
+        )
+        refs, notes = _load_list(path, client)
+        if args.convert_only:
+            _print_conversion(path, refs, notes)
+            return 0
+        outcomes = download_all(_select(refs, args.only), _build_sources(stack, client, config, args))
+    report = render_report(outcomes, notes)
     config.literature_dir.mkdir(parents=True, exist_ok=True)
     (config.literature_dir / "report.md").write_text(report, encoding="utf-8")
     print(report)  # the CLI's real output; logs go to stderr / files

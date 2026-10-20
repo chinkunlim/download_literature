@@ -8,6 +8,7 @@ All notable changes to **download_literature** are documented here
 ### Added
 - feat(literature): add literature downloader with open-access lookup and OpenAthens browser route (TASK-001) (`TASK-001`, by `@claude-code`)
 - feat(literature): try author and repository PDF URLs through the browser (TASK-001) (`TASK-001`, by `@claude-code`)
+- feat(literature): convert APA reference lists via Crossref and run the full pipeline in one command (by `@claude-code`)
 
 ### Fixed
 - fix(literature): wait for a stable page after bot checks before fetching (TASK-001) (`TASK-001`, by `@claude-code`)

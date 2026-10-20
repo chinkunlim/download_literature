@@ -71,6 +71,7 @@ download_literature/
 ├── docs/                                   # 【工程知識庫】架構、規格、決策、已知問題、維運、規範
 │   ├── adr/                                # [架構決策庫] 一決定一檔案
 │   │   ├── 001-literature-download-strategy.md
+│   │   ├── 002-apa-list-conversion.md
 │   │   ├── _TEMPLATE.md                    # ADR 範本 (tracker_cli 會套用)
 │   │   └── DECISIONS.md                    # 架構決策總表
 │   ├── architecture/                       # [系統架構與資料模型]
@@ -102,6 +103,7 @@ download_literature/
 │       │   ├── literature/
 │       │   │   ├── __init__.py
 │       │   │   ├── browser.py
+│       │   │   ├── crossref.py
 │       │   │   ├── files.py
 │       │   │   ├── http_pdf.py
 │       │   │   ├── openalex.py
@@ -113,6 +115,7 @@ download_literature/
 │       │   └── settings.py
 │       ├── domain/
 │       │   ├── __init__.py
+│       │   ├── apa.py
 │       │   ├── literature.py
 │       │   └── models.py
 │       ├── entrypoints/
@@ -122,12 +125,16 @@ download_literature/
 │       ├── services/
 │       │   ├── __init__.py
 │       │   ├── greeting.py
-│       │   └── literature.py
+│       │   ├── literature.py
+│       │   └── reference_builder.py
 │       └── __init__.py
 ├── tests/                                  # 【測試層】單元與整合測試
 │   ├── fixtures/
+│   │   ├── apa_list.md
+│   │   ├── crossref_search.json
 │   │   └── openalex_work.json
 │   ├── __init__.py
+│   ├── test_apa.py
 │   ├── test_greeting.py
 │   └── test_literature.py
 ├── .editorconfig

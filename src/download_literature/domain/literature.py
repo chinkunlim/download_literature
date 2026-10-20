@@ -137,3 +137,35 @@ def title_matches(title: str, text: str, min_share: float = 0.7) -> bool:
     joined = "".join(_words(text))
     found = sum(1 for w in keywords if w in present or w in joined)
     return found / len(keywords) >= min_share
+
+
+@dataclass(frozen=True)
+class WorkMeta:
+    """Bibliographic facts about a work from a metadata service such as Crossref.
+
+    Attributes:
+        doi: DOI without prefix.
+        title: Full title (subtitle included).
+        year: Publication year; None when unknown.
+        kind: Article, chapter or book.
+        first_author: Family name of the first author; empty when unknown.
+    """
+
+    doi: str
+    title: str
+    year: int | None
+    kind: ReferenceKind
+    first_author: str
+
+
+@dataclass(frozen=True)
+class ConversionNote:
+    """Something the user should check about one entry of a converted reference list.
+
+    Attributes:
+        citation: The entry as written in the list.
+        message: What happened (e.g. no DOI found, DOI unknown).
+    """
+
+    citation: str
+    message: str

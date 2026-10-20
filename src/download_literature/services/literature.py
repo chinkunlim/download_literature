@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Protocol
 
 from download_literature.domain.literature import (
+    ConversionNote,
     DownloadOutcome,
     DownloadStatus,
     Reference,
@@ -257,14 +258,15 @@ def download_all(references: list[Reference], sources: Sources) -> list[Download
     return outcomes
 
 
-def render_report(outcomes: list[DownloadOutcome]) -> str:
+def render_report(outcomes: list[DownloadOutcome], notes: list[ConversionNote] | None = None) -> str:
     """Build a Markdown report of the batch.
 
     Args:
         outcomes: Outcomes from `download_all`.
+        notes: Conversion notes from the APA step; shown in their own section when present.
 
     Returns:
-        Markdown text with a summary line and one table row per reference.
+        Markdown text with a summary line, one table row per reference and the notes.
     """
     counts = {s: sum(o.status is s for o in outcomes) for s in DownloadStatus}
     summary = ", ".join(f"{s.value}: {n}" for s, n in counts.items())
@@ -273,11 +275,9 @@ def render_report(outcomes: list[DownloadOutcome]) -> str:
         f"| {o.source or o.detail} |"
         for o in outcomes
     ]
-    header = [
-        "# Literature download report",
-        "",
-        summary,
-        "",
-        "| Reference | Status | File | Source / note |",
-    ]
-    return "\n".join(header + ["| --- | --- | --- | --- |"] + rows) + "\n"
+    lines = ["# Literature download report", "", summary, "", "| Reference | Status | File | Source / note |"]
+    lines += ["| --- | --- | --- | --- |"] + rows
+    if notes:
+        lines += ["", "## Check these citations", "", "| Citation | Note |", "| --- | --- |"]
+        lines += [f"| {n.citation} | {n.message} |" for n in notes]
+    return "\n".join(lines) + "\n"

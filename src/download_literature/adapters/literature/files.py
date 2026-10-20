@@ -96,3 +96,46 @@ class FilePdfStore:
         tmp.write_bytes(data)
         tmp.replace(path)
         return path
+
+
+def save_references(path: Path, refs: list[Reference]) -> None:
+    """Write references as a JSON list readable by `load_references` (empty fields omitted).
+
+    Args:
+        path: Target JSON file; parent folders are created.
+        refs: References to write.
+    """
+    items = []
+    for ref in refs:
+        item: dict[str, object] = {
+            "key": ref.key,
+            "citation": ref.citation,
+            "title": ref.title,
+            "kind": ref.kind.value,
+            "doi": ref.doi,
+            "arxiv_id": ref.arxiv_id,
+            "pdf_urls": list(ref.pdf_urls),
+        }
+        items.append({k: v for k, v in item.items() if v})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".part")
+    tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+    logger.info("saved references file=%s count=%d", path.name, len(refs))
+
+
+REFERENCE_LIST_NAMES = ("references.txt", "references.md", "references.json")
+
+
+def find_reference_list(folder: Path) -> Path | None:
+    """Pick the reference list in the input folder.
+
+    A pasted APA list (`references.txt` / `references.md`) wins over a converted `references.json`.
+
+    Args:
+        folder: Input folder, usually `DATA_DIR/input`.
+
+    Returns:
+        The first existing file in `REFERENCE_LIST_NAMES` order, or None.
+    """
+    return next((folder / name for name in REFERENCE_LIST_NAMES if (folder / name).is_file()), None)

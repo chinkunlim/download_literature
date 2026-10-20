@@ -13,3 +13,4 @@
 | ADR | 標題 | 狀態 | 日期 | 相關程式 |
 |---|---|---|---|---|
 | [ADR-001](001-literature-download-strategy.md) | 文獻下載策略：開放取用優先、Chrome 走機構授權、不繞過驗證 | Accepted | 2026-10-20 | TODO |
+| [ADR-002](002-apa-list-conversion.md) | APA 清單轉換：本地解析 + Crossref 核對 | Accepted | 2026-10-20 | TODO |

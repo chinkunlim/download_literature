@@ -1,8 +1,29 @@
 # download_literature
 
-AI-assisted software project with standard structure and agent handoff.
+從 APA 文獻清單自動下載論文 PDF：解析 APA → 到 Crossref 核對並補上 DOI → 先找開放取用版本、再用 Chrome 經學校 OpenAthens／IP 授權到出版社下載 → 核對 PDF 標題 → 產生報告。
 
-> 請把上面兩行改寫成這個專案的說明（`agentctl finish` 會檢查）。以下是開發環境與日常操作。
+## 使用方式
+
+1. 把 APA 格式的參考文獻清單存成 `DATA_DIR/input/references.txt`（或 `.md`），一筆一段；可以直接從 Word 或 Markdown 貼上。
+2. 執行：
+
+```bash
+uv run fetch-literature
+```
+
+3. 結果在 `DATA_DIR/output/literature/`：每篇 `<key>.pdf`，以及 `report.md`（每篇狀態、來源，以及「Check these citations」需要人工確認的引文）。
+
+| 指令 | 用途 |
+|---|---|
+| `uv run fetch-literature --convert-only` | 只把 APA 轉成 `references.json`，先檢查再下載 |
+| `uv run fetch-literature --no-browser` | 只抓開放取用版本，不開 Chrome |
+| `uv run fetch-literature --only <key>,<key>` | 只處理指定的文獻（key 見 `references.json`） |
+| `uv run fetch-literature --input <檔案>` | 用其他清單（`.txt` / `.md` / `.json`） |
+
+說明：
+- 轉換後的 `references.json` 可以手動修改（例如加 `pdf_urls` 放作者網站的 PDF、改 `kind`）；重跑時會保留這些修改與已下載的檔案。
+- 校外使用時，`.env` 的 `USER_EMAIL` / `USER_PASSWORD` 只會填在 OpenAthens 登入頁。遇到 Cloudflare / CAPTCHA 驗證，程式會停下來等你在 Chrome 視窗完成；一直重複驗證的網站請改用自己的瀏覽器手動下載，存成 `<key>.pdf` 放進輸出資料夾。
+- 專書不會自動下載；學校沒訂閱的期刊會列為 failed，可以找作者／大學網站的版本加進 `pdf_urls`。
 
 ## 第一次在這台電腦使用
 
