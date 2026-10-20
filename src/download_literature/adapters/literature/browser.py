@@ -20,10 +20,11 @@ from urllib.parse import quote, urlparse
 from playwright.sync_api import BrowserContext, Page, Playwright, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
-from download_literature.domain.literature import Reference, SourceError, is_pdf
+from download_literature.domain.literature import NeedsUserError, Reference, SourceError, is_pdf
 
 logger = logging.getLogger(__name__)
 
+AUTO_GRACE_SECONDS = 8  # automatic (non-interactive) bot checks usually clear within a few seconds
 _CHALLENGE_TITLES = ("just a moment", "請稍候", "attention required", "verify you are human")
 _FETCH_JS = """async (url) => {
   try {
@@ -124,7 +125,8 @@ class BrowserPublisherFetcher:
             profile_dir: Persistent Chrome profile folder (keeps the sign-in between runs), in DATA_DIR.
             openathens_domain: OpenAthens organisation domain; empty = plain DOI links.
             login: (e-mail, password) for the OpenAthens sign-in page; empty strings = never auto-fill.
-            wait_seconds: How long to wait for the user to finish a manual check or sign-in.
+            wait_seconds: How long to wait for the user to finish a manual check or sign-in; 0 = unattended
+                (pages that still need a person after a short grace period raise NeedsUserError).
         """
         self._profile_dir = profile_dir
         self._domain = openathens_domain
@@ -270,12 +272,19 @@ class BrowserPublisherFetcher:
         return sign_in or any(t in title for t in _CHALLENGE_TITLES)
 
     def settle(self, page: Page) -> None:
-        """Fill the OpenAthens sign-in once, then wait until the user clears any remaining check.
+        """Fill the OpenAthens sign-in once, then wait until any remaining check is cleared.
+
+        Unattended (`wait_seconds == 0`): automatic checks get `AUTO_GRACE_SECONDS` to clear by themselves;
+        anything still needing a person raises NeedsUserError instead of waiting (ADR-004).
 
         Args:
             page: Current page.
+
+        Raises:
+            NeedsUserError: When the page still needs a person after the allowed time.
         """
-        deadline = time.monotonic() + self._wait
+        start = time.monotonic()
+        deadline = start + max(self._wait, AUTO_GRACE_SECONDS)
         state = {"filled": False, "warned": False}
         clear_checks = 0  # a challenge page can vanish briefly before reloading; require two calm checks
         while clear_checks < 2 and time.monotonic() < deadline:
@@ -285,6 +294,8 @@ class BrowserPublisherFetcher:
             else:
                 clear_checks += 1
             page.wait_for_timeout(1500)
+        if clear_checks < 2 and self._needs_user(page):
+            raise NeedsUserError(urlparse(page.url).hostname or page.url)
         page.wait_for_load_state("domcontentloaded")
 
     def _handle_blocker(self, page: Page, state: dict[str, bool]) -> None:
@@ -296,7 +307,7 @@ class BrowserPublisherFetcher:
         """
         if is_openathens_host(page.url) and not state["filled"]:
             state["filled"] = self._fill_openathens(page)
-        elif not state["warned"]:
+        elif self._wait and not state["warned"]:
             logger.warning("請在 Chrome 視窗完成登入或驗證（最多等 %d 秒） url=%s", self._wait, page.url)
             state["warned"] = True
 

@@ -22,11 +22,25 @@ class DownloadStatus(str, Enum):
     DOWNLOADED = "downloaded"
     ALREADY_PRESENT = "already_present"
     MANUAL = "manual"
+    NEEDS_REVIEW = "needs_review"
     FAILED = "failed"
 
 
 class SourceError(Exception):
     """A download source failed (network error, HTTP error, blocked page)."""
+
+
+class NeedsUserError(SourceError):
+    """A site needs a person (bot check, CAPTCHA, unfilled sign-in) and was skipped in unattended mode."""
+
+    def __init__(self, site: str) -> None:
+        """Create the error.
+
+        Args:
+            site: Host name of the site that needs a person.
+        """
+        super().__init__(f"needs a person at {site}")
+        self.site = site
 
 
 @dataclass(frozen=True)

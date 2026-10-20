@@ -75,7 +75,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default="",
         help="comma-separated keys (or 'all') whose PDFs are replaced if a better copy is found",
     )
-    parser.add_argument("--wait", type=int, default=300, help="seconds to wait for a manual sign-in / check")
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="you are at the computer: wait for bot checks / sign-ins and retry items that need review",
+    )
+    parser.add_argument(
+        "--wait", type=int, default=300, help="seconds to wait per check in --interactive mode"
+    )
     return parser.parse_args(argv)
 
 
@@ -133,9 +140,8 @@ def _build_sources(
     browser: BrowserPublisherFetcher | None = None
     if not args.no_browser:
         login = (config.library_email, config.library_password)
-        browser = BrowserPublisherFetcher(
-            config.browser_profile_dir, config.openathens_domain, login, args.wait
-        )
+        wait = args.wait if args.interactive else 0  # unattended: skip steps that need a person (ADR-004)
+        browser = BrowserPublisherFetcher(config.browser_profile_dir, config.openathens_domain, login, wait)
         stack.enter_context(browser)
         ebsco = (EbscoFetcher(browser, config.ebsco_profile),) if config.ebsco_profile else ()
         routes = (*ebsco, browser)  # EBSCO first: version of record with fewer bot checks (ADR-003)

@@ -9,7 +9,7 @@ Sources are passed in (dependency injection), so the same flow runs offline in t
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -18,6 +18,7 @@ from download_literature.domain.literature import (
     ConversionNote,
     DownloadOutcome,
     DownloadStatus,
+    NeedsUserError,
     OaLocation,
     Reference,
     ReferenceKind,
@@ -181,22 +182,61 @@ class Sources:
     books: BookFinder | None = None
 
 
-def _acceptable(reference: Reference, data: bytes, sources: Sources) -> bool:
+@dataclass
+class _Attempt:
+    """State of obtaining one reference.
+
+    Attributes:
+        reference: Reference being processed.
+        sources: Download sources.
+        blocked: Sites that needed a person (bot check, sign-in) and were skipped.
+    """
+
+    reference: Reference
+    sources: Sources
+    blocked: list[str] = field(default_factory=list)
+
+    def note_error(self, where: str, exc: SourceError) -> None:
+        """Log a failed source and remember sites that need a person.
+
+        Args:
+            where: Route or URL that failed.
+            exc: The error.
+        """
+        if isinstance(exc, NeedsUserError):
+            self.blocked.append(exc.site)
+            logger.warning("needs a person key=%s site=%s (skipped)", self.reference.key, exc.site)
+        else:
+            logger.warning("source failed key=%s at=%s: %s", self.reference.key, where, exc)
+
+    def blocked_note(self) -> str:
+        """Describe the skipped sites.
+
+        Returns:
+            Note text, or empty when nothing was skipped.
+        """
+        if not self.blocked:
+            return ""
+        sites = ", ".join(dict.fromkeys(self.blocked))
+        return f"needs you at {sites}: run with --interactive"
+
+
+def _acceptable(attempt: _Attempt, data: bytes) -> bool:
     """Check that downloaded bytes are a PDF of this reference.
 
     Args:
-        reference: Reference being processed.
+        attempt: Current attempt (reference and text reader).
         data: Downloaded content.
-        sources: Download sources (provides the text reader).
 
     Returns:
         True for a PDF whose first pages show the title, or whose text cannot be read.
     """
+    reference, reader = attempt.reference, attempt.sources.pdf_text
     if not is_pdf(data):
         return False
-    if sources.pdf_text is None or not reference.title:
+    if reader is None or not reference.title:
         return True
-    text = sources.pdf_text.first_pages_text(data)
+    text = reader.first_pages_text(data)
     if not text.strip():
         logger.warning("no text layer, title not checked key=%s", reference.key)
         return True
@@ -225,16 +265,13 @@ def _oa_locations(reference: Reference, finder: OpenAccessFinder) -> list[OaLoca
         return []
 
 
-def _try_urls(
-    reference: Reference, urls: list[str], fetcher: PdfFetcher, sources: Sources
-) -> tuple[bytes, str] | None:
+def _try_urls(attempt: _Attempt, urls: list[str], fetcher: PdfFetcher) -> tuple[bytes, str] | None:
     """Try URLs in order until one returns a PDF of this reference.
 
     Args:
-        reference: Reference being processed.
+        attempt: Current attempt.
         urls: Candidate URLs.
         fetcher: Plain HTTP or browser fetcher.
-        sources: Download sources (title check).
 
     Returns:
         (PDF bytes, URL) or None.
@@ -243,59 +280,56 @@ def _try_urls(
         try:
             data = fetcher.fetch(url)
         except SourceError as exc:
-            logger.warning("skip url key=%s url=%s: %s", reference.key, url, exc)
+            attempt.note_error(url, exc)
             continue
-        if data and _acceptable(reference, data, sources):
+        if data and _acceptable(attempt, data):
             return data, url
-        logger.info("no usable pdf key=%s url=%s", reference.key, url)
+        logger.info("no usable pdf key=%s url=%s", attempt.reference.key, url)
     return None
 
 
-def _try_institutional(reference: Reference, sources: Sources) -> tuple[bytes, str] | None:
+def _try_institutional(attempt: _Attempt) -> tuple[bytes, str] | None:
     """Try each institutional route in order; a wrong paper from one route moves on to the next.
 
     Args:
-        reference: Reference being processed.
-        sources: Download sources.
+        attempt: Current attempt.
 
     Returns:
         (PDF bytes, URL) or None.
     """
-    if not reference.doi:
+    if not attempt.reference.doi:
         return None
-    for route in sources.publishers:
+    for route in attempt.sources.publishers:
         try:
-            got = route.fetch_pdf(reference)
+            got = route.fetch_pdf(attempt.reference)
         except SourceError as exc:
-            logger.warning(
-                "institutional route failed key=%s route=%s: %s", reference.key, type(route).__name__, exc
-            )
+            attempt.note_error(type(route).__name__, exc)
             continue
-        if got and _acceptable(reference, got[0], sources):
+        if got and _acceptable(attempt, got[0]):
             return got
     return None
 
 
-def _obtain(reference: Reference, sources: Sources) -> tuple[bytes, str, bool] | None:
+def _obtain(attempt: _Attempt) -> tuple[bytes, str, bool] | None:
     """Run the download routes in preference order.
 
     Args:
-        reference: Reference being processed.
-        sources: Download sources.
+        attempt: Current attempt.
 
     Returns:
         (PDF bytes, URL, is_version_of_record) or None.
     """
+    reference, sources = attempt.reference, attempt.sources
     locations = _oa_locations(reference, sources.open_access)
     published = [loc.url for loc in locations if loc.published]
-    got = _try_urls(reference, published, sources.http, sources) or _try_institutional(reference, sources)
+    got = _try_urls(attempt, published, sources.http) or _try_institutional(attempt)
     if got:
         return got[0], got[1], True
     secondary = list(reference.direct_urls()) + [loc.url for loc in locations if not loc.published]
     secondary = [u for u in dict.fromkeys(secondary) if u not in published]
-    got = _try_urls(reference, secondary, sources.http, sources)
+    got = _try_urls(attempt, secondary, sources.http)
     if got is None and sources.site is not None:
-        got = _try_urls(reference, list(reference.pdf_urls), sources.site, sources)
+        got = _try_urls(attempt, list(reference.pdf_urls), sources.site)
     return (got[0], got[1], False) if got else None
 
 
@@ -318,28 +352,63 @@ def _book_info(reference: Reference, sources: Sources) -> BookInfo | None:
         return None
 
 
-def _download_book(reference: Reference, sources: Sources) -> DownloadOutcome:
+def _join(*parts: str) -> str:
+    """Join non-empty notes.
+
+    Args:
+        parts: Note texts.
+
+    Returns:
+        Notes separated by "; ".
+    """
+    return "; ".join(p for p in parts if p)
+
+
+def _download_book(attempt: _Attempt) -> DownloadOutcome:
     """Obtain a book: a free scan, else an institutional e-book (when it has a DOI), else borrow.
 
     Args:
-        reference: Book reference.
-        sources: Download sources.
+        attempt: Current attempt for a book reference.
 
     Returns:
         The outcome; its detail names the latest edition when known.
     """
+    reference, sources = attempt.reference, attempt.sources
     info = _book_info(reference, sources)
     edition = f"latest edition: {info.latest_edition}" if info and info.latest_edition else ""
-    got = _try_urls(reference, list(info.public_pdf_urls), sources.http, sources) if info else None
+    got = _try_urls(attempt, list(info.public_pdf_urls), sources.http) if info else None
     if got is None and reference.doi:
-        found = _obtain(reference, sources)
+        found = _obtain(attempt)
         got = (found[0], found[1]) if found else None
     if got is None:
-        detail = "; ".join(x for x in ("book: borrow from the library", edition) if x)
-        return DownloadOutcome(reference, DownloadStatus.MANUAL, detail=detail)
+        status = DownloadStatus.NEEDS_REVIEW if attempt.blocked else DownloadStatus.MANUAL
+        detail = _join(attempt.blocked_note(), "book: borrow from the library", edition)
+        return DownloadOutcome(reference, status, detail=detail)
     path = sources.store.save(reference.key, got[0])
     logger.info("downloaded book key=%s url=%s bytes=%d", reference.key, got[1], len(got[0]))
     return DownloadOutcome(reference, DownloadStatus.DOWNLOADED, source=got[1], path=path, detail=edition)
+
+
+def _no_pdf(attempt: _Attempt, aside: Path | None) -> DownloadOutcome:
+    """Build the outcome when no PDF was obtained.
+
+    Args:
+        attempt: Current attempt.
+        aside: Previous file set aside by a refresh, or None.
+
+    Returns:
+        Previous copy restored, needs_review (a site needed a person) or failed.
+    """
+    reference, store = attempt.reference, attempt.sources.store
+    if aside is not None:
+        path = store.restore(reference.key, aside)
+        detail = _join("no better copy found; kept the previous copy", attempt.blocked_note())
+        return DownloadOutcome(reference, DownloadStatus.ALREADY_PRESENT, path=path, detail=detail)
+    if attempt.blocked:
+        return DownloadOutcome(reference, DownloadStatus.NEEDS_REVIEW, detail=attempt.blocked_note())
+    return DownloadOutcome(
+        reference, DownloadStatus.FAILED, detail="no PDF from open access, EBSCO or publisher"
+    )
 
 
 def download_reference(reference: Reference, sources: Sources, refresh: bool = False) -> DownloadOutcome:
@@ -357,25 +426,16 @@ def download_reference(reference: Reference, sources: Sources, refresh: bool = F
     existing = sources.store.existing(reference.key)
     if existing is not None:
         return DownloadOutcome(reference, DownloadStatus.ALREADY_PRESENT, path=existing)
+    attempt = _Attempt(reference, sources)
     if reference.kind is ReferenceKind.BOOK:
-        return _download_book(reference, sources)
-    got = _obtain(reference, sources)
-    if got is None and aside is not None:
-        path = sources.store.restore(reference.key, aside)
-        return DownloadOutcome(
-            reference,
-            DownloadStatus.ALREADY_PRESENT,
-            path=path,
-            detail="no better copy found; kept the previous copy",
-        )
+        return _download_book(attempt)
+    got = _obtain(attempt)
     if got is None:
-        return DownloadOutcome(
-            reference, DownloadStatus.FAILED, detail="no PDF from open access, EBSCO or publisher"
-        )
+        return _no_pdf(attempt, aside)
     data, url, official = got
     path = sources.store.save(reference.key, data)
     logger.info("downloaded key=%s url=%s bytes=%d official=%s", reference.key, url, len(data), official)
-    detail = "" if official else AUTHOR_COPY_NOTE
+    detail = "" if official else _join(AUTHOR_COPY_NOTE, attempt.blocked_note())
     return DownloadOutcome(reference, DownloadStatus.DOWNLOADED, source=url, path=path, detail=detail)
 
 

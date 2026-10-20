@@ -27,6 +27,7 @@ from download_literature.adapters.literature.openalex import parse_openalex_loca
 from download_literature.config.settings import AppConfig  # noqa: E402
 from download_literature.domain.literature import (  # noqa: E402
     DownloadStatus,
+    NeedsUserError,
     OaLocation,
     Reference,
     ReferenceKind,
@@ -404,6 +405,35 @@ class ServiceTest(unittest.TestCase):
         assert outcome.path is not None
         self.assertEqual(outcome.path.read_bytes(), PDF + b"old")
         self.assertIn("kept the previous copy", outcome.detail)
+
+    def test_blocked_route_becomes_needs_review(self) -> None:
+        """A route that needs a person (bot check) ends as needs_review naming the site."""
+
+        class Blocked:
+            def fetch_pdf(self, reference: Reference) -> tuple[bytes, str] | None:
+                raise NeedsUserError("www.sciencedirect.com")
+
+        [outcome] = download_all(
+            [Reference("A", "A", doi="10.1/a")],
+            Sources(FakeFinder({}), FakeHttp({}), (Blocked(),), self.store),
+        )
+        self.assertEqual(outcome.status, DownloadStatus.NEEDS_REVIEW)
+        self.assertIn("www.sciencedirect.com", outcome.detail)
+        self.assertIn("--interactive", outcome.detail)
+
+    def test_author_copy_still_saved_when_official_route_is_blocked(self) -> None:
+        """An author copy is kept, and the note says the official version waits for a person."""
+
+        class Blocked:
+            def fetch_pdf(self, reference: Reference) -> tuple[bytes, str] | None:
+                raise NeedsUserError("www.sciencedirect.com")
+
+        finder = FakeFinder({}, {"10.1/a": ["https://repo/a.pdf"]})
+        sources = Sources(finder, FakeHttp({"https://repo/a.pdf": PDF}), (Blocked(),), self.store)
+        [outcome] = download_all([Reference("A", "A", doi="10.1/a")], sources)
+        self.assertEqual(outcome.status, DownloadStatus.DOWNLOADED)
+        self.assertIn("author/preprint copy", outcome.detail)
+        self.assertIn("www.sciencedirect.com", outcome.detail)
 
     def test_failure_when_every_source_fails(self) -> None:
         """Without any PDF the reference is reported as failed."""
