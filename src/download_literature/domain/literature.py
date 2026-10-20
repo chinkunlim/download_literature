@@ -162,6 +162,15 @@ class WorkMeta:
         year: Publication year; None when unknown.
         kind: Article, chapter or book.
         first_author: Family name of the first author; empty when unknown.
+        authors: (family, given) pairs in order; a group author has an empty given name.
+        container: Journal, proceedings, book (for a chapter) or repository (for a preprint) name.
+        volume: Volume number.
+        issue: Issue number.
+        pages: Page range such as `775-808`.
+        article_number: Article number for journals without pages.
+        publisher: Publisher name (books, chapters, proceedings).
+        edition: Edition statement such as `2nd ed.`.
+        genre: Detailed type: journal-article, proceedings-article, book, book-chapter, preprint, ...
     """
 
     doi: str
@@ -169,6 +178,15 @@ class WorkMeta:
     year: int | None
     kind: ReferenceKind
     first_author: str
+    authors: tuple[tuple[str, str], ...] = ()
+    container: str = ""
+    volume: str = ""
+    issue: str = ""
+    pages: str = ""
+    article_number: str = ""
+    publisher: str = ""
+    edition: str = ""
+    genre: str = ""
 
 
 @dataclass(frozen=True)

@@ -108,6 +108,7 @@ download_literature/
 │       │   │   ├── ebsco.py
 │       │   │   ├── files.py
 │       │   │   ├── http_pdf.py
+│       │   │   ├── metadata.py
 │       │   │   ├── openalex.py
 │       │   │   └── pdf_text.py
 │       │   └── __init__.py
@@ -118,6 +119,7 @@ download_literature/
 │       ├── domain/
 │       │   ├── __init__.py
 │       │   ├── apa.py
+│       │   ├── apa_format.py
 │       │   ├── literature.py
 │       │   └── models.py
 │       ├── entrypoints/
@@ -137,6 +139,8 @@ download_literature/
 │   │   └── openalex_work.json
 │   ├── __init__.py
 │   ├── test_apa.py
+│   ├── test_apa_format.py
+│   ├── test_free_text.py
 │   ├── test_greeting.py
 │   └── test_literature.py
 ├── .editorconfig

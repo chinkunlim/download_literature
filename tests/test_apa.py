@@ -126,9 +126,10 @@ class CrossrefParseTest(unittest.TestCase):
             "items"
         ]
         works = [parse_crossref_work(i) for i in items]
+        assert works[0] is not None
         self.assertEqual(
-            works[0],
-            WorkMeta(
+            (works[0].doi, works[0].title, works[0].year, works[0].kind, works[0].first_author),
+            (
                 "10.1037/1089-2680.2.3.271",
                 "The Emerging Field of Emotion Regulation: An Integrative Review",
                 1998,
@@ -281,11 +282,11 @@ class BuildTest(unittest.TestCase):
         self.assertIn("not found on Crossref", notes[0].message)
         self.assertIn("lookup failed", notes[1].message)
 
-    def test_unparsable_entries_are_skipped_with_note(self) -> None:
-        """Lines without a year become notes, not references."""
+    def test_unidentified_free_text_becomes_a_note(self) -> None:
+        """A non-APA line that title search cannot identify becomes a note, not a reference."""
         refs, notes = build_references(["Appendix A"], FakeResolver({}, {}))
         self.assertEqual(refs, [])
-        self.assertIn("could not parse", notes[0].message)
+        self.assertIn("not found", notes[0].message)
 
     def test_keys_are_unique_and_ascii(self) -> None:
         """Same author/year/title start gets a suffix; accents are folded to ASCII."""

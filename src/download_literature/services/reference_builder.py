@@ -10,10 +10,11 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Protocol
 
-from download_literature.domain.apa import ApaEntry, parse_apa
+from download_literature.domain.apa import ApaEntry, find_doi, parse_apa
+from download_literature.domain.apa_format import format_apa
 from download_literature.domain.literature import (
     ConversionNote,
     Reference,
@@ -42,7 +43,16 @@ _STOPWORDS = {
     "at",
     "as",
     "is",
+    "your",
+    "my",
+    "our",
+    "their",
+    "his",
+    "her",
+    "its",
 }
+_YEAR_IN_TEXT = re.compile(r"\b(19|20)\d{2}\b")
+FREE_TEXT_NOTE = "matched by title search; check the APA entry"
 
 
 class WorkResolver(Protocol):
@@ -216,14 +226,160 @@ def _to_reference(entry: ApaEntry, work: WorkMeta | None, taken: set[str]) -> Re
     )
 
 
+@dataclass(frozen=True)
+class Resolution:
+    """Result of resolving one input line.
+
+    Attributes:
+        input: The line as the user wrote it.
+        reference: Reference to download, or None when the work could not be identified.
+        work: Confirmed metadata, or None.
+        apa: APA 7 reference (from metadata; the input text when nothing was found).
+        note: What the user should check; empty when all is well.
+    """
+
+    input: str
+    reference: Reference | None
+    work: WorkMeta | None
+    apa: str
+    note: str
+
+
+def _keywords(text: str) -> list[str]:
+    """Lower-case ASCII words of four or more letters.
+
+    Args:
+        text: Any text.
+
+    Returns:
+        Keywords in order.
+    """
+    return [w for w in re.findall(r"[a-z0-9]+", _ascii(text).lower()) if len(w) >= 4]
+
+
+def match_free_text(text: str, works: list[WorkMeta]) -> WorkMeta | None:
+    """Pick the work a title-only / author+title input refers to.
+
+    Accepted when at least 80% of the input's keywords (author names and years removed) are in the title,
+    the year (if written) is within one year, and either most of the title was given or an author's
+    family name appears in the input. A record holding only its main title is accepted when all of it
+    appears in the input together with an author's name and a matching year.
+
+    Args:
+        text: User input such as `Kosmyna — Your Brain on ChatGPT`.
+        works: Search results in ranking order.
+
+    Returns:
+        The first acceptable work, or None.
+    """
+    year = _YEAR_IN_TEXT.search(text)
+    for work in works:
+        surnames = {_ascii(f).lower() for f, _ in work.authors}
+        words = [w for w in _keywords(text) if w not in surnames and not w.isdigit()]
+        title_words = set(_keywords(work.title))
+        if not words or not title_words:
+            continue
+        joined = "".join(_keywords(work.title))
+        input_cover = sum(1 for w in words if w in title_words or w in joined) / len(words)
+        title_cover = len(title_words & set(words)) / len(title_words)
+        has_author = any(name and name in _ascii(text).lower() for name in surnames)
+        year_ok = not year or work.year is None or abs(int(year.group(0)) - work.year) <= 1
+        if input_cover >= 0.8 and year_ok and (title_cover >= 0.5 or has_author):
+            return work
+        # Crossref may hold only the main title (e.g. "Self-Distancing"): accept it when the whole record
+        # title is in the input and author and a written year confirm it
+        if title_cover == 1.0 and has_author and year is not None and year_ok:
+            return work
+    return None
+
+
+def _arxiv_id(doi: str) -> str:
+    """Get the arXiv id from an arXiv DataCite DOI.
+
+    Args:
+        doi: DOI such as `10.48550/arXiv.2506.08872`.
+
+    Returns:
+        `2506.08872`, or empty for other DOIs.
+    """
+    match = re.match(r"10\.48550/arxiv\.(\d{4}\.\d{4,5})", doi, re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def _from_work(text: str, work: WorkMeta, taken: set[str], note: str) -> Resolution:
+    """Build a resolution from confirmed metadata alone.
+
+    Args:
+        text: User input.
+        work: Confirmed metadata.
+        taken: Keys already used.
+        note: Note for the user.
+
+    Returns:
+        The resolution with an APA entry from the metadata.
+    """
+    apa = format_apa(work)
+    ref = Reference(
+        key=make_key(work.first_author, work.year, work.title, taken),
+        citation=apa,
+        doi=work.doi,
+        kind=work.kind,
+        arxiv_id=_arxiv_id(work.doi),
+        title=work.title,
+    )
+    return Resolution(text, ref, work, apa, note)
+
+
+def _resolve_free_text(text: str, resolver: WorkResolver, taken: set[str]) -> Resolution:
+    """Resolve an input that is not an APA reference (title, author + title, or a bare DOI).
+
+    Args:
+        text: User input.
+        resolver: Metadata service.
+        taken: Keys already used.
+
+    Returns:
+        The resolution.
+    """
+    doi = find_doi(text)
+    try:
+        work = resolver.by_doi(doi) if doi else match_free_text(text, resolver.search(text))
+    except SourceError as exc:
+        return Resolution(text, None, None, text, f"metadata lookup failed ({exc}); run again later")
+    if work is None:
+        return Resolution(text, None, None, text, "not found by title search; add authors, year or a DOI")
+    return _from_work(text, work, taken, "" if doi else FREE_TEXT_NOTE)
+
+
+def resolve_entry(text: str, resolver: WorkResolver, taken: set[str]) -> Resolution:
+    """Resolve one input line: an APA reference, a title, author + title, or a DOI.
+
+    Args:
+        text: One line from the user's list.
+        resolver: Metadata service (Crossref + OpenAlex).
+        taken: Keys already used; the new key is added.
+
+    Returns:
+        The resolution (reference, APA 7 text and a note).
+    """
+    try:
+        entry = parse_apa(text)
+    except ValueError:
+        return _resolve_free_text(text, resolver, taken)
+    work, note = _confirm(entry, resolver)
+    ref = _to_reference(entry, work, taken)
+    apa = format_apa(work, title=entry.title) if work else entry.raw
+    return Resolution(entry.raw, ref, work, apa, note)
+
+
 def build_references(
     entries: list[str], resolver: WorkResolver
 ) -> tuple[list[Reference], list[ConversionNote]]:
-    """Convert APA entries into references, confirming each one on the metadata service.
+    """Convert input lines into references, confirming each one on the metadata service.
 
     Args:
-        entries: Reference strings from `domain.apa.split_entries`.
-        resolver: Metadata service (e.g. Crossref).
+        entries: Lines from `domain.apa.split_entries` (APA references or titles).
+        resolver: Metadata service (e.g. Crossref + OpenAlex).
 
     Returns:
         (references in list order, notes for entries that need a human look).
@@ -232,15 +388,11 @@ def build_references(
     notes: list[ConversionNote] = []
     taken: set[str] = set()
     for text in entries:
-        try:
-            entry = parse_apa(text)
-        except ValueError as exc:
-            notes.append(ConversionNote(text, f"could not parse: {exc}"))
-            continue
-        work, note = _confirm(entry, resolver)
-        refs.append(_to_reference(entry, work, taken))
-        if note:
-            notes.append(ConversionNote(entry.raw, note))
+        res = resolve_entry(text, resolver, taken)
+        if res.reference is not None:
+            refs.append(res.reference)
+        if res.note:
+            notes.append(ConversionNote(res.input, res.note))
     logger.info("converted references count=%d notes=%d", len(refs), len(notes))
     return refs, notes
 

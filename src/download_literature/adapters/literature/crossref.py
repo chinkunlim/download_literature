@@ -37,6 +37,39 @@ def _year(item: dict[str, Any]) -> int | None:
     return None
 
 
+def _title(item: dict[str, Any]) -> str:
+    """Join title and subtitle and strip HTML.
+
+    Args:
+        item: Crossref work record.
+
+    Returns:
+        Clean title; empty when there is none.
+    """
+    titles = item.get("title") or []
+    if not titles:
+        return ""
+    title = str(titles[0])
+    subtitles = item.get("subtitle") or []
+    if subtitles and subtitles[0].lower() not in title.lower():
+        title = f"{title}: {subtitles[0]}"
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", title)).strip()
+
+
+def _kind(type_name: str) -> ReferenceKind:
+    """Map a Crossref type to article / chapter / book.
+
+    Args:
+        type_name: Crossref `type`.
+
+    Returns:
+        The reference kind.
+    """
+    if type_name in _BOOK_TYPES:
+        return ReferenceKind.BOOK
+    return ReferenceKind.CHAPTER if type_name in _CHAPTER_TYPES else ReferenceKind.ARTICLE
+
+
 def parse_crossref_work(item: dict[str, Any]) -> WorkMeta | None:
     """Convert a Crossref work record into a WorkMeta.
 
@@ -46,24 +79,30 @@ def parse_crossref_work(item: dict[str, Any]) -> WorkMeta | None:
     Returns:
         The work, or None when the record has no title or is not a publication (dataset, review report, ...).
     """
-    titles = item.get("title") or []
-    if not titles or item.get("type", "") in _SKIPPED_TYPES:
+    title, type_name = _title(item), str(item.get("type", ""))
+    if not title or type_name in _SKIPPED_TYPES:
         return None
-    title = titles[0]
-    subtitles = item.get("subtitle") or []
-    if subtitles and subtitles[0].lower() not in title.lower():
-        title = f"{title}: {subtitles[0]}"
-    title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", title)).strip()
-    kind_name = item.get("type", "")
-    kind = (
-        ReferenceKind.BOOK
-        if kind_name in _BOOK_TYPES
-        else ReferenceKind.CHAPTER
-        if kind_name in _CHAPTER_TYPES
-        else ReferenceKind.ARTICLE
+    authors = tuple(
+        (str(a.get("family") or a.get("name") or ""), str(a.get("given") or ""))
+        for a in item.get("author") or []
     )
-    authors = item.get("author") or [{}]
-    return WorkMeta(str(item["DOI"]), title, _year(item), kind, str(authors[0].get("family", "")))
+    containers = item.get("container-title") or [""]
+    return WorkMeta(
+        str(item["DOI"]),
+        title,
+        _year(item),
+        _kind(type_name),
+        authors[0][0] if authors else "",
+        authors=authors,
+        container=re.sub(r"<[^>]+>", "", containers[0]),
+        volume=str(item.get("volume") or ""),
+        issue=str(item.get("issue") or ""),
+        pages=str(item.get("page") or ""),
+        article_number=str(item.get("article-number") or ""),
+        publisher=str(item.get("publisher") or ""),
+        edition=str(item.get("edition-number") or ""),
+        genre="preprint" if type_name == "posted-content" else type_name,
+    )
 
 
 class CrossrefResolver:

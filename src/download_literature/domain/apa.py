@@ -110,7 +110,7 @@ def _strip_trailing(value: str) -> str:
     return value
 
 
-def _find_doi(text: str) -> str:
+def find_doi(text: str) -> str:
     """Find the DOI written in an entry.
 
     Args:
@@ -181,7 +181,7 @@ def parse_apa(text: str) -> ApaEntry:
     if date is None:
         raise ValueError("no APA date such as (2019) found")
     authors = raw[: date.start()].strip()
-    doi = _find_doi(raw)
+    doi = find_doi(raw)
     arxiv = _ARXIV.search(raw)
     urls = [_strip_trailing(u) for u in _URL.findall(raw)]
     other_urls = tuple(u for u in urls if "doi.org/" not in u and "arxiv.org/" not in u)
