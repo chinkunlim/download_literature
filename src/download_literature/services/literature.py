@@ -23,6 +23,8 @@ from download_literature.domain.literature import (
     Reference,
     ReferenceKind,
     SourceError,
+    cjk_bigrams,
+    has_cjk,
     is_pdf,
     title_matches,
 )
@@ -248,8 +250,9 @@ def _acceptable(attempt: _Attempt, data: bytes) -> bool:
     if reader is None or not reference.title:
         return True
     text = reader.first_pages_text(data)
-    if not text.strip():
-        logger.warning("no text layer, title not checked key=%s", reference.key)
+    unreadable = not text.strip() or (has_cjk(reference.title) and len(cjk_bigrams(text)) < 10)
+    if unreadable:  # no text layer, or Chinese fonts pypdf cannot decode (garbled characters)
+        logger.warning("text layer unreadable, title not checked key=%s", reference.key)
         return True
     if title_matches(reference.title, text):
         return True
@@ -308,9 +311,7 @@ def _try_institutional(attempt: _Attempt) -> tuple[bytes, str] | None:
     Returns:
         (PDF bytes, URL) or None.
     """
-    if not attempt.reference.doi:
-        return None
-    for route in attempt.sources.publishers:
+    for route in attempt.sources.publishers:  # each route decides what it needs (DOI, title, landing page)
         attempt.step(getattr(route, "label", type(route).__name__))
         try:
             got = route.fetch_pdf(attempt.reference)

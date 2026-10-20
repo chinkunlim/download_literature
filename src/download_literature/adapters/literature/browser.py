@@ -184,7 +184,7 @@ class BrowserPublisherFetcher:
         """Download the publisher PDF by opening the DOI (through OpenAthens).
 
         Args:
-            reference: Reference with a DOI.
+            reference: Reference; without a DOI this route is skipped.
 
         Returns:
             (PDF bytes, PDF URL), or None when no PDF could be obtained.
@@ -192,6 +192,8 @@ class BrowserPublisherFetcher:
         Raises:
             SourceError: When the browser was not started or the page fails.
         """
+        if not reference.doi:  # the publisher site is reached through the DOI
+            return None
         page = self.new_page()
         try:
             return self._via_publisher(page, reference)

@@ -437,6 +437,17 @@ class ServiceTest(unittest.TestCase):
         self.assertIn("author/preprint copy", outcome.detail)
         self.assertIn("www.sciencedirect.com", outcome.detail)
 
+    def test_routes_are_tried_without_doi(self) -> None:
+        """Routes that search by title (Airiti, EBSCO) are tried for references without a DOI."""
+
+        class ByTitle:
+            def fetch_pdf(self, reference: Reference) -> tuple[bytes, str] | None:
+                return (PDF, "https://www.airitilibrary.com/x") if reference.title else None
+
+        sources = Sources(FakeFinder({}), FakeHttp({}), (ByTitle(),), self.store)
+        [outcome] = download_all([Reference("A", "A", title="台灣低憂鬱孕產婦")], sources)
+        self.assertEqual(outcome.status, DownloadStatus.DOWNLOADED)
+
     def test_failure_when_every_source_fails(self) -> None:
         """Without any PDF the reference is reported as failed."""
         [outcome] = download_all(

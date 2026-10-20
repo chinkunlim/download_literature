@@ -18,3 +18,4 @@
 | [ADR-004](004-unattended-mode-and-books.md) | 無人值守模式（需人工的步驟改標需人工處理）與書籍處理 | Accepted | 2026-10-20 | TODO |
 | [ADR-005](005-markdown-reference-list.md) | 以 Markdown 清單作為輸入與輸出（待處理區 + APA 7 表格） | Accepted | 2026-10-20 | TODO |
 | [ADR-006](006-sqlite-store-and-runner.md) | SQLite 資料庫 + 共用 Runner；references.md 只當輸入、report.md 放結果 | Accepted | 2026-10-20 | TODO |
+| [ADR-007](007-chinese-references-airiti.md) | 中文文獻：華藝（Airiti）辨識與下載、中文 APA 格式 | Accepted | 2026-10-20 | TODO |

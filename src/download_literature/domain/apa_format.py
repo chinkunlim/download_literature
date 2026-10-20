@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 
 from download_literature.domain.apa import ApaEntry
-from download_literature.domain.literature import ReferenceKind, WorkMeta
+from download_literature.domain.literature import ReferenceKind, WorkMeta, has_cjk
 
 _SENTENCE_BREAK = (":", "?", "!", ".")
 
@@ -164,6 +164,47 @@ def _source(meta: WorkMeta) -> str:
     return f"{text}." if meta.container else ""
 
 
+def _chinese_source(meta: WorkMeta) -> str:
+    """Build the source part of a Chinese reference (full-width punctuation).
+
+    Args:
+        meta: Work metadata.
+
+    Returns:
+        Source text ending in '。', or empty.
+    """
+    if meta.genre in ("book", "monograph", "edited-book"):
+        return f"{meta.publisher}。" if meta.publisher else ""
+    if meta.genre == "book-chapter":
+        pages = f"（頁{_pages(meta.pages)}）" if meta.pages else ""
+        return f"載於{meta.container}{pages}。" + (f"{meta.publisher}。" if meta.publisher else "")
+    if not meta.container:
+        return ""
+    journal = meta.container + (f"，{meta.volume}" if meta.volume else "")
+    text = f"*{journal}*" + (f"({meta.issue})" if meta.issue else "")
+    text += f"，{_pages(meta.pages)}" if meta.pages else ""
+    return f"{text}。"
+
+
+def format_apa_chinese(meta: WorkMeta, title: str = "") -> str:
+    """Format a Chinese reference in APA 7 (Taiwan) style: names joined with '、', full-width punctuation.
+
+    Args:
+        meta: Work metadata.
+        title: Title to use instead of the metadata title.
+
+    Returns:
+        One reference in Markdown.
+    """
+    authors = "、".join(f for f, _ in meta.authors) or meta.first_author
+    year = str(meta.year) if meta.year else "無日期"
+    shown = (title or meta.title).rstrip("。.")
+    book = meta.genre in ("book", "monograph", "edited-book")
+    title_part = f"*{shown}*。" if book else f"{shown}。"
+    link = f"https://doi.org/{meta.doi}" if meta.doi else ""
+    return f"{authors}（{year}）。{title_part}{_chinese_source(meta)}{link}"
+
+
 def format_apa(meta: WorkMeta, title: str = "") -> str:
     """Format an APA 7 reference-list entry.
 
@@ -174,6 +215,8 @@ def format_apa(meta: WorkMeta, title: str = "") -> str:
     Returns:
         One reference in Markdown (italics as `*...*`).
     """
+    if has_cjk(title or meta.title):
+        return format_apa_chinese(meta, title)
     authors = format_authors(meta.authors) or meta.first_author
     year = str(meta.year) if meta.year else "n.d."
     shown = title or sentence_case(meta.title)
@@ -199,6 +242,11 @@ def format_entry(entry: ApaEntry) -> str:
     Returns:
         APA text built from the entry's own parts; book titles are italic.
     """
+    if has_cjk(entry.title):
+        year = f"（{entry.year}）。" if entry.year else "（無日期）。"
+        title = f"*{entry.title}*。" if entry.kind_hint is ReferenceKind.BOOK else f"{entry.title}。"
+        link = f"https://doi.org/{entry.doi}" if entry.doi else " ".join(entry.urls)
+        return f"{entry.authors_text}{year}{title}{entry.source_text}{link}"
     year = f"({entry.year})." if entry.year else "(n.d.)."
     title = f"*{entry.title}*." if entry.kind_hint is ReferenceKind.BOOK else _end(entry.title)
     link = f"https://doi.org/{entry.doi}" if entry.doi else " ".join(entry.urls)

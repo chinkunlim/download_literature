@@ -19,6 +19,7 @@ import httpx
 
 from download_literature.adapters.db.engine import create_db_engine, upgrade_database
 from download_literature.adapters.db.repository import SqlItemStore
+from download_literature.adapters.literature.airiti import AiritiLibrary
 from download_literature.adapters.literature.browser import BrowserPublisherFetcher
 from download_literature.adapters.literature.crossref import CrossrefResolver
 from download_literature.adapters.literature.ebsco import EbscoFetcher
@@ -32,9 +33,10 @@ from download_literature.adapters.literature.report_md import render_report_md
 from download_literature.adapters.literature.tracker_md import pending_text, render_input_md
 from download_literature.adapters.locks import RunLock
 from download_literature.config.settings import AppConfig
+from download_literature.domain.literature import has_cjk
 from download_literature.domain.tracker import ItemStatus, TrackedItem
 from download_literature.services.literature import PublisherFetcher, Sources
-from download_literature.services.reference_builder import resolve_entry
+from download_literature.services.reference_builder import WorkResolver, resolve_entry
 from download_literature.services.tracker import (
     IdentifyResult,
     download_items,
@@ -168,6 +170,25 @@ class Runner:
         self.write_files()
         return reset
 
+    def reidentify(self, keys: set[str]) -> list[str]:
+        """Look items up again (new APA text and metadata) at the next run, then download if needed.
+
+        Args:
+            keys: Item keys.
+
+        Returns:
+            Keys marked for re-identification.
+        """
+        marked = []
+        for key in sorted(keys):
+            item = self.store.get(key)
+            if item is not None and item.reference is not None:
+                status = ItemStatus.PENDING if item.status is not ItemStatus.DOWNLOADED else item.status
+                self.store.update(replace(item, apa="", status=status))
+                marked.append(key)
+        self.write_files()
+        return marked
+
     def delete(self, keys: set[str]) -> list[str]:
         """Remove items from the list (downloaded PDFs are kept on disk).
 
@@ -213,33 +234,39 @@ class Runner:
         ]
         return [k for k in keys if not options.only or k in options.only]
 
-    def _sources(self, stack: ExitStack, client: httpx.Client, options: ProcessOptions) -> Sources:
-        """Build the download sources for one run.
+    def _browser(self, stack: ExitStack, options: ProcessOptions) -> BrowserPublisherFetcher:
+        """Start the shared Chrome session for this run.
 
         Args:
             stack: Exit stack that closes the browser at the end of the run.
-            client: Shared HTTP client.
-            options: Process options.
+            options: Process options (interactive waiting).
 
         Returns:
-            The wired sources.
+            The started browser.
+        """
+        cfg = self.config
+        wait = options.wait_seconds if options.interactive else 0  # unattended: skip steps needing a person
+        browser = BrowserPublisherFetcher(
+            cfg.browser_profile_dir, cfg.openathens_domain, (cfg.library_email, cfg.library_password), wait
+        )
+        stack.enter_context(browser)
+        return browser
+
+    def _sources(self, client: httpx.Client, browser: BrowserPublisherFetcher | None) -> Sources:
+        """Build the download sources for one run.
+
+        Args:
+            client: Shared HTTP client.
+            browser: Started Chrome session, or None for open access only.
+
+        Returns:
+            The wired sources: Airiti (Chinese), EBSCO, then the publisher site (ADR-003, ADR-007).
         """
         cfg = self.config
         routes: tuple[PublisherFetcher, ...] = ()
-        browser: BrowserPublisherFetcher | None = None
-        if options.use_browser:
-            wait = (
-                options.wait_seconds if options.interactive else 0
-            )  # unattended: skip steps needing a person
-            browser = BrowserPublisherFetcher(
-                cfg.browser_profile_dir,
-                cfg.openathens_domain,
-                (cfg.library_email, cfg.library_password),
-                wait,
-            )
-            stack.enter_context(browser)
+        if browser is not None:
             ebsco = (EbscoFetcher(browser, cfg.ebsco_profile),) if cfg.ebsco_profile else ()
-            routes = (*ebsco, browser)
+            routes = (AiritiLibrary(browser), *ebsco, browser)
         return Sources(
             OpenAlexFinder(client),
             HttpPdfFetcher(client),
@@ -248,6 +275,17 @@ class Runner:
             PypdfTextReader(),
             browser,
             OpenLibraryBooks(client),
+        )
+
+    def _needs_browser_to_identify(self) -> bool:
+        """Tell whether pending entries include Chinese text (identified through Airiti in Chrome).
+
+        Returns:
+            True when a Chinese entry is waiting to be identified (new, or marked for re-identification).
+        """
+        return any(
+            has_cjk(i.input) and ((i.reference is None and i.status is ItemStatus.PENDING) or not i.apa)
+            for i in self.store.list_items()
         )
 
     def process(self, options: ProcessOptions) -> RunSummary:
@@ -267,18 +305,19 @@ class Runner:
             client = stack.enter_context(
                 httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=60)
             )
-            identified = identify_pending(
-                self.store,
-                CombinedResolver([CrossrefResolver(client), OpenAlexResolver(client)]),
-                resolve_entry,
-            )
+            browser = None
+            if options.use_browser and self._needs_browser_to_identify():
+                browser = self._browser(stack, options)
+            services: list[WorkResolver] = [CrossrefResolver(client), OpenAlexResolver(client)]
+            services += [AiritiLibrary(browser)] if browser else []
+            identified = identify_pending(self.store, CombinedResolver(services), resolve_entry)
             self.write_files()
             keys = [] if options.identify_only else self._to_process(options)
             job_id = None
             if keys:
-                job_id = download_items(
-                    self.store, keys, self._sources(stack, client, options), options.refresh
-                )
+                if options.use_browser and browser is None:
+                    browser = self._browser(stack, options)
+                job_id = download_items(self.store, keys, self._sources(client, browser), options.refresh)
         self.write_files()
         return RunSummary(queued, identified, keys, job_id)
 

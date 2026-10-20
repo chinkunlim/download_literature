@@ -21,7 +21,11 @@ _URL = re.compile(r"https?://[^\s<>\"]+")
 _BULLET = re.compile(r"^(?:[-*+•]|\d+[.)])\s+")
 _MD_LINK = re.compile(r"\[([^\]]*)\]\((\S+?)\)")
 _UNDERSCORE_EMPHASIS = re.compile(r"(?<![\w/])_([^_\n]+?)_(?![\w/])")
-_SENTENCE_END = re.compile(r"[.?!](?=\s|$)")
+_SENTENCE_END = re.compile(r"[.?!](?=\s|$|[\u3400-\u9fff])")
+# Chinese APA uses full-width punctuation; map it one-to-one so positions stay the same as in the raw text
+_FULL_WIDTH = str.maketrans(
+    {"（": "(", "）": ")", "。": ".", "，": ",", "：": ":", "、": ",", "；": ";", "？": "?", "！": "!"}
+)
 _NUMBERS = re.compile(r"\d+\s*\(\d+\)|\d+\s*[–-]\s*\d+|,\s*\d+\s*[,.]")
 _NOT_SENTENCE_END = {"Vol", "vol", "pp", "p", "Ed", "Eds", "No", "no", "ed", "eds"}
 
@@ -181,27 +185,29 @@ def parse_apa(text: str) -> ApaEntry:
         ValueError: When no APA date like `(2019)` or `(n.d.)` is found.
     """
     raw = _clean_line(text)
-    date = _YEAR.search(raw)
+    norm = raw.translate(_FULL_WIDTH)
+    date = _YEAR.search(norm)
     if date is None:
         raise ValueError("no APA date such as (2019) found")
     authors = raw[: date.start()].strip()
-    doi = find_doi(raw)
-    arxiv = _ARXIV.search(raw)
-    urls = [_strip_trailing(u) for u in _URL.findall(raw)]
+    doi = find_doi(norm)
+    arxiv = _ARXIV.search(norm)
+    urls = [_strip_trailing(u) for u in _URL.findall(norm)]
     other_urls = tuple(u for u in urls if "doi.org/" not in u and "arxiv.org/" not in u)
-    rest = _URL.sub("", raw[date.end() :])
-    rest = re.sub(r"\bdoi:\s*\S+", "", rest, flags=re.IGNORECASE).strip()
-    title, remainder = _split_title(rest)
-    title = re.sub(r"\s*\[[^\]]*\]\s*$", "", title).strip()
+    title_norm, remainder = _split_title(norm[date.end() :])
+    title = raw[date.end() : date.end() + len(title_norm)]  # same positions: keeps full-width text
+    title = re.sub(r"\s*\[[^\]]*\]\s*$", "", title).strip().rstrip("。.")
+    remainder = re.sub(r"\bdoi:\s*\S+", "", _URL.sub("", remainder), flags=re.IGNORECASE)
+    source = raw[len(raw) - len(remainder) :] if remainder and norm.endswith(remainder) else remainder
     return ApaEntry(
         raw=raw,
         authors_text=authors,
-        first_author=authors.split(",")[0].strip().rstrip("."),
+        first_author=re.split(r"[,、]", authors)[0].strip().rstrip("."),
         year=int(date.group(1)) if date.group(1) else None,
         title=title,
         doi=doi,
         arxiv_id=arxiv.group(1) if arxiv else "",
         urls=other_urls,
         kind_hint=_kind_hint(remainder, bool(doi or arxiv)),
-        source_text=re.sub(r"\s+", " ", remainder).strip(),
+        source_text=re.sub(r"\s+", " ", _URL.sub("", source)).strip(),
     )

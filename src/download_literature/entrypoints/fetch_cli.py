@@ -6,6 +6,7 @@ Usage:
     uv run fetch-literature --interactive          # at the computer: also handle ⚠️ items
     uv run fetch-literature --retry Gross_1998_RGP # process an item again
     uv run fetch-literature --delete Old_2001_X    # remove an item from the list
+    uv run fetch-literature --reidentify Key       # look an item up again (new APA text)
     uv run fetch-literature --status               # print the list without processing
     uv run fetch-literature --identify-only | --no-browser | --only K1,K2 | --refresh K1
 
@@ -44,6 +45,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     p.add_argument("--retry", default="", help="comma-separated keys to process again")
     p.add_argument("--delete", default="", help="comma-separated keys to remove from the list")
+    p.add_argument("--reidentify", default="", help="comma-separated keys to look up again (new APA text)")
     p.add_argument("--status", action="store_true", help="print the list and exit (no processing)")
     p.add_argument("--identify-only", action="store_true", help="identify new entries, no download")
     p.add_argument("--no-browser", action="store_true", help="open access only; no Chrome")
@@ -116,6 +118,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"已加入 {len(runner.add_entries(args.add))} 筆")
     if args.retry:
         print(f"重新處理：{', '.join(runner.retry(set(_keys(args.retry)))) or '（沒有符合的 key）'}")
+    if args.reidentify:
+        print(
+            f"重新辨識：{', '.join(runner.reidentify(set(_keys(args.reidentify)))) or '（沒有符合的 key）'}"
+        )
     if args.delete:
         print(f"已移除：{', '.join(runner.delete(set(_keys(args.delete)))) or '（沒有符合的 key）'}")
     if not args.status:

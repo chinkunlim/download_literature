@@ -20,6 +20,8 @@ from download_literature.domain.literature import (
     ReferenceKind,
     SourceError,
     WorkMeta,
+    cjk_bigrams,
+    has_cjk,
     title_matches,
 )
 
@@ -105,9 +107,14 @@ def make_key(first_author: str, year: int | None, title: str, taken: set[str]) -
     Returns:
         The new key (suffixed `_b`, `_c`, ... on collision).
     """
-    author = re.sub(r"[^A-Za-z-]", "", _ascii(first_author)) or "Anon"
-    words = [w for w in re.findall(r"[A-Za-z0-9]+", _ascii(title)) if w.lower() not in _STOPWORDS]
-    base = f"{author}_{year or 'nd'}_{''.join(w.capitalize() for w in words[:2])}".rstrip("_")
+    if has_cjk(title) or has_cjk(first_author):  # Chinese: keep the characters (file names allow them)
+        author = re.sub(r"[\s,、]", "", first_author) or "佚名"
+        stem = "".join(re.findall(r"[\u3400-\u9fff\uf900-\ufaffA-Za-z0-9]", title))[:7]
+    else:
+        author = re.sub(r"[^A-Za-z-]", "", _ascii(first_author)) or "Anon"
+        words = [w for w in re.findall(r"[A-Za-z0-9]+", _ascii(title)) if w.lower() not in _STOPWORDS]
+        stem = "".join(w.capitalize() for w in words[:2])
+    base = f"{author}_{year or 'nd'}_{stem}".rstrip("_")
     key, suffix = base, ord("b")
     while key in taken:
         key, suffix = f"{base}_{chr(suffix)}", suffix + 1
@@ -125,7 +132,8 @@ def _authors_match(entry: ApaEntry, work: WorkMeta) -> bool | None:
     Returns:
         True / False when both names are known, None when either is missing.
     """
-    cited, found = _ascii(entry.first_author).lower(), _ascii(work.first_author).lower()
+    cited = _ascii(entry.first_author).lower() or entry.first_author  # Chinese names have no ASCII form
+    found = _ascii(work.first_author).lower() or work.first_author
     if not cited or not found:
         return None
     return cited in found or found in cited
@@ -221,7 +229,7 @@ def _to_reference(entry: ApaEntry, work: WorkMeta | None, taken: set[str]) -> Re
         doi=work.doi if work else entry.doi,
         kind=work.kind if work else entry.kind_hint,
         arxiv_id=entry.arxiv_id,
-        pdf_urls=entry.urls,
+        pdf_urls=entry.urls + ((work.url,) if work and work.url else ()),
         title=title,
         author=work.first_author if work and work.first_author else entry.first_author,
     )
@@ -247,7 +255,7 @@ class Resolution:
 
 
 def _keywords(text: str) -> list[str]:
-    """Lower-case ASCII words of four or more letters.
+    """Lower-case ASCII words of four or more letters, plus Chinese character pairs.
 
     Args:
         text: Any text.
@@ -255,7 +263,8 @@ def _keywords(text: str) -> list[str]:
     Returns:
         Keywords in order.
     """
-    return [w for w in re.findall(r"[a-z0-9]+", _ascii(text).lower()) if len(w) >= 4]
+    words = [w for w in re.findall(r"[a-z0-9]+", _ascii(text).lower()) if len(w) >= 4]
+    return words + cjk_bigrams(text)
 
 
 def match_free_text(text: str, works: list[WorkMeta]) -> WorkMeta | None:
@@ -275,7 +284,9 @@ def match_free_text(text: str, works: list[WorkMeta]) -> WorkMeta | None:
     """
     year = _YEAR_IN_TEXT.search(text)
     for work in works:
-        surnames = {_ascii(f).lower() for f, _ in work.authors}
+        surnames = {_ascii(f).lower() for f, _ in work.authors} | {
+            p for f, _ in work.authors for p in cjk_bigrams(f)
+        }
         words = [w for w in _keywords(text) if w not in surnames and not w.isdigit()]
         title_words = set(_keywords(work.title))
         if not words or not title_words:
@@ -283,7 +294,8 @@ def match_free_text(text: str, works: list[WorkMeta]) -> WorkMeta | None:
         joined = "".join(_keywords(work.title))
         input_cover = sum(1 for w in words if w in title_words or w in joined) / len(words)
         title_cover = len(title_words & set(words)) / len(title_words)
-        has_author = any(name and name in _ascii(text).lower() for name in surnames)
+        names = [_ascii(f).lower() or f for f, _ in work.authors]
+        has_author = any(name and (name in _ascii(text).lower() or name in text) for name in names)
         year_ok = not year or work.year is None or abs(int(year.group(0)) - work.year) <= 1
         if input_cover >= 0.8 and year_ok and (title_cover >= 0.5 or has_author):
             return work
@@ -326,6 +338,7 @@ def _from_work(text: str, work: WorkMeta, taken: set[str], note: str) -> Resolut
         doi=work.doi,
         kind=work.kind,
         arxiv_id=_arxiv_id(work.doi),
+        pdf_urls=(work.url,) if work.url else (),
         title=work.title,
         author=work.first_author,
     )

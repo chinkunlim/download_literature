@@ -76,6 +76,7 @@ download_literature/
 │   │   ├── 004-unattended-mode-and-books.md
 │   │   ├── 005-markdown-reference-list.md
 │   │   ├── 006-sqlite-store-and-runner.md
+│   │   ├── 007-chinese-references-airiti.md
 │   │   ├── _TEMPLATE.md                    # ADR 範本 (tracker_cli 會套用)
 │   │   └── DECISIONS.md                    # 架構決策總表
 │   ├── architecture/                       # [系統架構與資料模型]
@@ -116,6 +117,7 @@ download_literature/
 │       │   │   └── repository.py
 │       │   ├── literature/
 │       │   │   ├── __init__.py
+│       │   │   ├── airiti.py
 │       │   │   ├── browser.py
 │       │   │   ├── crossref.py
 │       │   │   ├── ebsco.py
@@ -158,9 +160,11 @@ download_literature/
 │   │   ├── crossref_search.json
 │   │   └── openalex_work.json
 │   ├── __init__.py
+│   ├── test_airiti.py
 │   ├── test_apa.py
 │   ├── test_apa_format.py
 │   ├── test_books.py
+│   ├── test_chinese.py
 │   ├── test_db.py
 │   ├── test_free_text.py
 │   ├── test_greeting.py

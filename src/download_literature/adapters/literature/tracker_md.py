@@ -49,7 +49,12 @@ _NOTE_TRANSLATIONS: list[tuple[str, str]] = [
     (r"DOI title differs from the citation: ", "DOI 對應的標題與引文不同："),
     (r"metadata lookup failed \([^)]*\)[^;]*", "查詢書目資料失敗，稍後再試"),
 ]
-_SOURCE_NAMES = {"research.ebsco.com": "EBSCO", "arxiv.org": "arXiv", "archive.org": "Internet Archive"}
+_SOURCE_NAMES = {
+    "research.ebsco.com": "EBSCO",
+    "arxiv.org": "arXiv",
+    "archive.org": "Internet Archive",
+    "airitilibrary.com": "華藝",
+}
 
 
 def translate_note(note: str) -> str:

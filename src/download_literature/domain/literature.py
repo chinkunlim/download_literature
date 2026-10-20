@@ -145,9 +145,39 @@ def safe_filename(name: str) -> str:
         name: Raw key or title.
 
     Returns:
-        Letters, digits, `-` and `.` kept; every other run of characters becomes one `_`.
+        Letters (including Chinese), digits, `-` and `.` kept; every other run becomes one `_`.
     """
-    return re.sub(r"[^A-Za-z0-9.-]+", "_", name).strip("_")
+    return re.sub(r"[^\w.-]+", "_", name).strip("_")
+
+
+_CJK = "\u3400-\u9fff\uf900-\ufaff"
+
+
+def has_cjk(text: str) -> bool:
+    """Tell whether text contains Chinese / Japanese characters.
+
+    Args:
+        text: Any text.
+
+    Returns:
+        True when at least one CJK character is present.
+    """
+    return re.search(f"[{_CJK}]", text) is not None
+
+
+def cjk_bigrams(text: str) -> list[str]:
+    """Split the CJK runs of a text into overlapping character pairs (single characters stay single).
+
+    Args:
+        text: Any text; runs are separated by non-CJK characters (spaces, punctuation, Latin).
+
+    Returns:
+        Character pairs in order.
+    """
+    pairs: list[str] = []
+    for run in re.findall(f"[{_CJK}]+", text):
+        pairs += [run] if len(run) == 1 else [run[i : i + 2] for i in range(len(run) - 1)]
+    return pairs
 
 
 def _words(text: str) -> list[str]:
@@ -166,6 +196,7 @@ def title_matches(title: str, text: str, min_share: float = 0.7) -> bool:
     """Check that a PDF's first-page text shows the expected title.
 
     Open-access indexes sometimes point at the wrong paper (ISSUE-002); this keeps such PDFs out.
+    Chinese titles are compared by character pairs (no spaces between words).
     Hyphenation and line breaks are ignored by also comparing the text with all spaces removed.
 
     Args:
@@ -176,6 +207,10 @@ def title_matches(title: str, text: str, min_share: float = 0.7) -> bool:
     Returns:
         True when enough title words appear (or there is no title to check).
     """
+    if has_cjk(title):  # Chinese: compare character pairs; PDF text may break lines anywhere
+        wanted = set(cjk_bigrams(title))
+        present = set(cjk_bigrams(re.sub(r"\s+", "", text)))
+        return len(wanted & present) / len(wanted) >= min_share
     keywords = [w for w in _words(title) if len(w) >= 4]
     if not keywords:
         return True
@@ -204,6 +239,7 @@ class WorkMeta:
         publisher: Publisher name (books, chapters, proceedings).
         edition: Edition statement such as `2nd ed.`.
         genre: Detailed type: journal-article, proceedings-article, book, book-chapter, preprint, ...
+        url: Landing page of the work in a library database (e.g. Airiti); empty when unknown.
     """
 
     doi: str
@@ -220,3 +256,4 @@ class WorkMeta:
     publisher: str = ""
     edition: str = ""
     genre: str = ""
+    url: str = ""
