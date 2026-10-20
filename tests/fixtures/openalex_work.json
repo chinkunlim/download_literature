@@ -4,28 +4,42 @@
   "best_oa_location": {
     "is_oa": true,
     "pdf_url": "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/pdf",
-    "landing_page_url": "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/full"
+    "landing_page_url": "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/full",
+    "version": "publishedVersion"
   },
   "locations": [
     {
       "is_oa": true,
       "pdf_url": "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/pdf",
-      "landing_page_url": "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/full"
+      "landing_page_url": "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/full",
+      "version": "publishedVersion"
     },
     {
       "is_oa": true,
       "pdf_url": "https://europepmc.org/articles/pmc5222787?pdf=render",
-      "landing_page_url": "https://europepmc.org/articles/pmc5222787"
+      "landing_page_url": "https://europepmc.org/articles/pmc5222787",
+      "version": "acceptedVersion"
     },
     {
       "is_oa": false,
       "pdf_url": "https://paywalled.example.org/x.pdf",
-      "landing_page_url": "https://paywalled.example.org/x"
+      "landing_page_url": "https://paywalled.example.org/x",
+      "version": null
     },
     {
       "is_oa": true,
       "pdf_url": null,
-      "landing_page_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5222787"
+      "landing_page_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5222787",
+      "version": "submittedVersion"
+    },
+    {
+      "is_oa": true,
+      "version": null,
+      "source": {
+        "type": "journal"
+      },
+      "pdf_url": "https://journal.example/no-version.pdf",
+      "landing_page_url": "https://journal.example/x"
     }
   ]
 }

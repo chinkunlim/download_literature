@@ -6,10 +6,12 @@ Usage:
     uv run fetch-literature --convert-only      # only APA → references.json, no download
     uv run fetch-literature --no-browser        # open access only (no Chrome, no sign-in)
     uv run fetch-literature --only Gross_1998_EmergingField
+    uv run fetch-literature --refresh Schleider_2022_NHB  # replace an author / preprint copy if possible
 
 Steps: an APA list is split, parsed and confirmed on Crossref, then written to `<list>.json` (keys,
-extra URLs and kinds from an earlier run are kept). Every reference is then downloaded (open access
-first, then the publisher through Chrome / OpenAthens). PDFs and `report.md` go to
+extra URLs and kinds from an earlier run are kept). Every reference is then downloaded, version of
+record first: published open-access copies, EBSCO, the publisher through Chrome / OpenAthens, and only
+then preprints / author copies (flagged in the report). PDFs and `report.md` go to
 `DATA_DIR/output/literature/`.
 """
 
@@ -24,6 +26,7 @@ import httpx
 
 from download_literature.adapters.literature.browser import BrowserPublisherFetcher
 from download_literature.adapters.literature.crossref import CrossrefResolver
+from download_literature.adapters.literature.ebsco import EbscoFetcher
 from download_literature.adapters.literature.files import (
     FilePdfStore,
     find_reference_list,
@@ -67,6 +70,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--no-browser", action="store_true", help="open access only; skip the publisher route"
     )
     parser.add_argument("--only", default="", help="comma-separated reference keys to process")
+    parser.add_argument(
+        "--refresh",
+        default="",
+        help="comma-separated keys (or 'all') whose PDFs are replaced if a better copy is found",
+    )
     parser.add_argument("--wait", type=int, default=300, help="seconds to wait for a manual sign-in / check")
     return parser.parse_args(argv)
 
@@ -110,26 +118,44 @@ def _load_list(path: Path, client: httpx.Client) -> tuple[list[Reference], list[
 def _build_sources(
     stack: ExitStack, client: httpx.Client, config: AppConfig, args: argparse.Namespace
 ) -> Sources:
-    """Create the OA finder, HTTP fetcher, optional Chrome fetcher and PDF store.
+    """Create the OA finder, HTTP fetcher, institutional routes (EBSCO, publisher), site fetcher and store.
 
     Args:
         stack: Exit stack that closes the browser when the batch ends.
         client: Shared HTTP client.
-        config: Settings (paths, OpenAthens domain, credentials).
+        config: Settings (paths, OpenAthens domain, EBSCO profile, credentials).
         args: Parsed options (`no_browser`, `wait`).
 
     Returns:
         The wired download sources.
     """
-    publisher: PublisherFetcher | None = None
+    routes: tuple[PublisherFetcher, ...] = ()
+    browser: BrowserPublisherFetcher | None = None
     if not args.no_browser:
         login = (config.library_email, config.library_password)
         browser = BrowserPublisherFetcher(
             config.browser_profile_dir, config.openathens_domain, login, args.wait
         )
-        publisher = stack.enter_context(browser)
+        stack.enter_context(browser)
+        ebsco = (EbscoFetcher(browser, config.ebsco_profile),) if config.ebsco_profile else ()
+        routes = (*ebsco, browser)  # EBSCO first: version of record with fewer bot checks (ADR-003)
     store = FilePdfStore(config.literature_dir)
-    return Sources(OpenAlexFinder(client), HttpPdfFetcher(client), publisher, store, PypdfTextReader())
+    return Sources(OpenAlexFinder(client), HttpPdfFetcher(client), routes, store, PypdfTextReader(), browser)
+
+
+def _refresh_keys(refs: list[Reference], value: str) -> frozenset[str]:
+    """Resolve the --refresh option.
+
+    Args:
+        refs: References being processed.
+        value: Comma-separated keys, or `all`.
+
+    Returns:
+        Keys to refresh.
+    """
+    if value.strip().lower() == "all":
+        return frozenset(r.key for r in refs)
+    return frozenset(k.strip() for k in value.split(",") if k.strip())
 
 
 def _print_conversion(path: Path, refs: list[Reference], notes: list[ConversionNote]) -> None:
@@ -170,7 +196,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.convert_only:
             _print_conversion(path, refs, notes)
             return 0
-        outcomes = download_all(_select(refs, args.only), _build_sources(stack, client, config, args))
+        selected = _select(refs, args.only)
+        sources = _build_sources(stack, client, config, args)
+        outcomes = download_all(selected, sources, _refresh_keys(selected, args.refresh))
     report = render_report(outcomes, notes)
     config.literature_dir.mkdir(parents=True, exist_ok=True)
     (config.literature_dir / "report.md").write_text(report, encoding="utf-8")

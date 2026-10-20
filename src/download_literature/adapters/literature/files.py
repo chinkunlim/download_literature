@@ -80,6 +80,37 @@ class FilePdfStore:
         path = self._path(key)
         return path if path.is_file() and path.stat().st_size > 0 else None
 
+    def set_aside(self, key: str) -> Path | None:
+        """Move an existing PDF to `superseded/` so a better version can be downloaded.
+
+        Args:
+            key: Reference key.
+
+        Returns:
+            Where the old file now is, or None when there was no file.
+        """
+        current = self.existing(key)
+        if current is None:
+            return None
+        target = self._folder / "superseded" / current.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        current.replace(target)
+        return target
+
+    def restore(self, key: str, aside: Path) -> Path:
+        """Put a file moved by `set_aside` back in place.
+
+        Args:
+            key: Reference key.
+            aside: Path returned by `set_aside`.
+
+        Returns:
+            The restored path.
+        """
+        path = self._path(key)
+        aside.replace(path)
+        return path
+
     def save(self, key: str, data: bytes) -> Path:
         """Write PDF bytes atomically (temp file, then rename).
 

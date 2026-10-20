@@ -14,3 +14,4 @@
 |---|---|---|---|---|
 | [ADR-001](001-literature-download-strategy.md) | 文獻下載策略：開放取用優先、Chrome 走機構授權、不繞過驗證 | Accepted | 2026-10-20 | TODO |
 | [ADR-002](002-apa-list-conversion.md) | APA 清單轉換：本地解析 + Crossref 核對 | Accepted | 2026-10-20 | TODO |
+| [ADR-003](003-version-of-record-first.md) | 下載順序：正式版優先（開放取用正式版 → EBSCO → 出版社 → 作者稿/預印本） | Accepted | 2026-10-20 | TODO |

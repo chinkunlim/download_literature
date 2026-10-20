@@ -16,12 +16,18 @@ from download_literature.adapters.literature.browser import (  # noqa: E402
     is_openathens_host,
     pdf_url_variants,
 )
+from download_literature.adapters.literature.ebsco import (  # noqa: E402
+    ebsco_results_url,
+    ebsco_viewer_url,
+    pick_matching_results,
+)
 from download_literature.adapters.literature.files import FilePdfStore, load_references  # noqa: E402
 from download_literature.adapters.literature.http_pdf import parse_citation_pdf_url  # noqa: E402
-from download_literature.adapters.literature.openalex import parse_openalex_pdf_urls  # noqa: E402
+from download_literature.adapters.literature.openalex import parse_openalex_locations  # noqa: E402
 from download_literature.config.settings import AppConfig  # noqa: E402
 from download_literature.domain.literature import (  # noqa: E402
     DownloadStatus,
+    OaLocation,
     Reference,
     ReferenceKind,
     SourceError,
@@ -36,13 +42,15 @@ PDF = b"%PDF-1.7\n" + b"x" * 2000
 
 
 class FakeFinder:
-    """Open-access finder returning fixed URLs per DOI."""
+    """Open-access finder: `urls` are published versions, `copies` are preprints / accepted manuscripts."""
 
-    def __init__(self, urls: dict[str, list[str]]) -> None:
+    def __init__(self, urls: dict[str, list[str]], copies: dict[str, list[str]] | None = None) -> None:
         self.urls = urls
+        self.copies = copies or {}
 
-    def find_pdf_urls(self, doi: str) -> list[str]:
-        return self.urls.get(doi, [])
+    def find_pdf_locations(self, doi: str) -> list[OaLocation]:
+        published = [OaLocation(u, True) for u in self.urls.get(doi, [])]
+        return published + [OaLocation(u, False) for u in self.copies.get(doi, [])]
 
 
 class FakeHttp:
@@ -122,14 +130,15 @@ class TitleTest(unittest.TestCase):
 class ParserTest(unittest.TestCase):
     """Parsers for external formats."""
 
-    def test_openalex_returns_unique_open_access_pdf_urls(self) -> None:
-        """Best OA location first, duplicates and closed / missing PDFs dropped."""
+    def test_openalex_locations_with_version(self) -> None:
+        """Unique OA PDFs, best first; published = publishedVersion or an unversioned journal copy."""
         data = json.loads((FIXTURES / "openalex_work.json").read_text(encoding="utf-8"))
         self.assertEqual(
-            parse_openalex_pdf_urls(data),
+            parse_openalex_locations(data),
             [
-                "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/pdf",
-                "https://europepmc.org/articles/pmc5222787?pdf=render",
+                OaLocation("https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/pdf", True),
+                OaLocation("https://europepmc.org/articles/pmc5222787?pdf=render", False),
+                OaLocation("https://journal.example/no-version.pdf", True),
             ],
         )
 
@@ -183,6 +192,39 @@ class BrowserHelpersTest(unittest.TestCase):
         )
 
 
+class EbscoHelpersTest(unittest.TestCase):
+    """Pure helpers of the EBSCO adapter."""
+
+    def test_urls(self) -> None:
+        """Search and viewer URLs use the library's EBSCO profile id."""
+        self.assertEqual(
+            ebsco_results_url("3pnjf3", "10.1037/a0027600"),
+            "https://research.ebsco.com/c/3pnjf3/search/results?q=10.1037%2Fa0027600",
+        )
+        self.assertEqual(
+            ebsco_viewer_url("3pnjf3", "zghjhqze7r"),
+            "https://research.ebsco.com/c/3pnjf3/viewer/pdf/zghjhqze7r",
+        )
+
+    def test_only_results_with_the_cited_title_are_kept(self) -> None:
+        """Papers that merely cite the DOI are skipped; detail ids are taken from the links."""
+        results = [
+            ("Self-distancing in children", "/c/3pnjf3/search/details/aaa111?pos=1&q=x"),
+            (
+                "Dealing With Feeling: A Meta-Analysis of the Effectiveness of Strategies",
+                "/c/3pnjf3/search/details/zghjhqze7r?pos=2",
+            ),
+            ("no link", ""),
+        ]
+        self.assertEqual(
+            pick_matching_results(
+                results, "Dealing with feeling: A meta-analysis of the effectiveness of strategies"
+            ),
+            ["zghjhqze7r"],
+        )
+        self.assertEqual(pick_matching_results(results, ""), [])
+
+
 class FilesTest(unittest.TestCase):
     """Reference file loading and PDF storage."""
 
@@ -233,7 +275,9 @@ class ServiceTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def _sources(self, http: FakeHttp, finder: FakeFinder, publisher: FakePublisher | None = None) -> Sources:
-        return Sources(open_access=finder, http=http, publisher=publisher, store=self.store)
+        return Sources(
+            open_access=finder, http=http, publishers=(publisher,) if publisher else (), store=self.store
+        )
 
     def test_books_are_marked_manual_without_network(self) -> None:
         """Books are never fetched; they are listed for manual handling."""
@@ -282,7 +326,7 @@ class ServiceTest(unittest.TestCase):
         texts = FakeText(
             {wrong: "Sexual health of young adults", right: "Using thematic analysis in psychology"}
         )
-        sources = Sources(open_access=finder, http=http, publisher=None, store=self.store, pdf_text=texts)
+        sources = Sources(open_access=finder, http=http, publishers=(), store=self.store, pdf_text=texts)
         ref = Reference("A", "A", doi="10.1/a", title="Using thematic analysis in psychology")
         [outcome] = download_all([ref], sources)
         self.assertEqual(outcome.source, "https://oa/right.pdf")
@@ -298,6 +342,68 @@ class ServiceTest(unittest.TestCase):
         )
         [outcome] = download_all([Reference("A", "A", doi="10.1/a", title="Some title here")], sources)
         self.assertEqual(outcome.status, DownloadStatus.DOWNLOADED)
+
+    def test_next_institutional_route_is_tried_after_a_wrong_paper(self) -> None:
+        """When the first route (e.g. EBSCO) returns another paper, the next route (publisher) is used."""
+
+        class WrongPaper:
+            def fetch_pdf(self, reference: Reference) -> tuple[bytes, str] | None:
+                return PDF + b"wrong", "https://ebsco.example/wrong"
+
+        texts = FakeText(
+            {PDF + b"wrong": "Another study entirely", PDF: "Dealing with feeling meta-analysis"}
+        )
+        right = FakePublisher({"10.1/a"})
+        sources = Sources(FakeFinder({}), FakeHttp({}), (WrongPaper(), right), self.store, texts)
+        ref = Reference("A", "A", doi="10.1/a", title="Dealing with feeling meta-analysis")
+        [outcome] = download_all([ref], sources)
+        self.assertEqual(outcome.source, "https://publisher.example/10.1/a")
+
+    def test_preprints_and_author_copies_come_after_institutional_routes(self) -> None:
+        """arXiv, accepted manuscripts and listed URLs are used only when EBSCO / publisher fail."""
+        ref = Reference("A", "A", doi="10.1/a", arxiv_id="1234.5678", pdf_urls=("https://lab/a.pdf",))
+        http = FakeHttp({"https://arxiv.org/pdf/1234.5678": PDF})
+        publisher = FakePublisher({"10.1/a"})
+        [outcome] = download_all([ref], Sources(FakeFinder({}), http, (publisher,), self.store))
+        self.assertEqual(outcome.source, "https://publisher.example/10.1/a")
+        self.assertEqual(http.calls, [])
+
+    def test_author_copy_is_flagged_in_the_outcome(self) -> None:
+        """A secondary copy is saved but marked so its page numbers get checked."""
+        finder = FakeFinder({}, {"10.1/a": ["https://repo/accepted.pdf"]})
+        http = FakeHttp({"https://repo/accepted.pdf": PDF})
+        [outcome] = download_all([Reference("A", "A", doi="10.1/a")], Sources(finder, http, (), self.store))
+        self.assertEqual(outcome.status, DownloadStatus.DOWNLOADED)
+        self.assertIn("author/preprint copy", outcome.detail)
+
+    def test_site_fetcher_retries_listed_urls_blocked_for_plain_http(self) -> None:
+        """Listed URLs that plain HTTP cannot fetch are retried in the browser."""
+        ref = Reference("A", "A", doi="10.1/a", pdf_urls=("https://lab/a.pdf",))
+        site = FakeHttp({"https://lab/a.pdf": PDF})
+        sources = Sources(FakeFinder({}), FakeHttp({}), (), self.store, None, site)
+        [outcome] = download_all([ref], sources)
+        self.assertEqual(outcome.source, "https://lab/a.pdf")
+        self.assertEqual(site.calls, ["https://lab/a.pdf"])
+
+    def test_refresh_replaces_copy_with_official_version(self) -> None:
+        """--refresh sets the old file aside and keeps the newly found official PDF."""
+        self.store.save("A", PDF + b"old")
+        sources = self._sources(FakeHttp({}), FakeFinder({}), FakePublisher({"10.1/a"}))
+        [outcome] = download_all([Reference("A", "A", doi="10.1/a")], sources, refresh=frozenset({"A"}))
+        self.assertEqual(outcome.status, DownloadStatus.DOWNLOADED)
+        assert outcome.path is not None
+        self.assertEqual(outcome.path.read_bytes(), PDF)
+        self.assertTrue((Path(self.tmp.name) / "superseded" / "A.pdf").is_file())
+
+    def test_refresh_keeps_old_file_when_nothing_better_is_found(self) -> None:
+        """Without an official version the previous file is restored."""
+        self.store.save("A", PDF + b"old")
+        sources = self._sources(FakeHttp({}), FakeFinder({}))
+        [outcome] = download_all([Reference("A", "A", doi="10.1/a")], sources, refresh=frozenset({"A"}))
+        self.assertEqual(outcome.status, DownloadStatus.ALREADY_PRESENT)
+        assert outcome.path is not None
+        self.assertEqual(outcome.path.read_bytes(), PDF + b"old")
+        self.assertIn("kept the previous copy", outcome.detail)
 
     def test_failure_when_every_source_fails(self) -> None:
         """Without any PDF the reference is reported as failed."""

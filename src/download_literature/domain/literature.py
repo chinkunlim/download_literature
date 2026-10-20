@@ -62,6 +62,19 @@ class Reference:
 
 
 @dataclass(frozen=True)
+class OaLocation:
+    """One open-access copy of a work.
+
+    Attributes:
+        url: PDF URL.
+        published: True for the publisher's version of record; False for preprints and accepted manuscripts.
+    """
+
+    url: str
+    published: bool
+
+
+@dataclass(frozen=True)
 class DownloadOutcome:
     """What happened to one reference.
 

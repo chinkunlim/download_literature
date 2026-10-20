@@ -8,25 +8,43 @@ from typing import Any
 
 import httpx
 
-from download_literature.domain.literature import SourceError
+from download_literature.domain.literature import OaLocation, SourceError
 
 logger = logging.getLogger(__name__)
 
 OPENALEX_WORK_URL = "https://api.openalex.org/works/doi:{doi}"
 
 
-def parse_openalex_pdf_urls(work: dict[str, Any]) -> list[str]:
-    """Extract open-access PDF URLs from an OpenAlex work record.
+def _is_published(location: dict[str, Any]) -> bool:
+    """Tell whether an OpenAlex location holds the version of record.
+
+    Args:
+        location: One entry of `locations` / `best_oa_location`.
+
+    Returns:
+        True for `publishedVersion`, or for an unversioned copy hosted by a journal.
+    """
+    version = location.get("version")
+    source_type = (location.get("source") or {}).get("type")
+    return version == "publishedVersion" or (version is None and source_type == "journal")
+
+
+def parse_openalex_locations(work: dict[str, Any]) -> list[OaLocation]:
+    """Extract open-access PDF copies from an OpenAlex work record.
 
     Args:
         work: Decoded JSON of `GET /works/doi:<doi>`.
 
     Returns:
-        Unique PDF URLs, best OA location first; closed locations and missing PDFs are dropped.
+        Unique PDF copies, best OA location first; closed locations and missing PDFs are dropped.
     """
     locations = [work.get("best_oa_location") or {}] + list(work.get("locations") or [])
-    urls = [loc.get("pdf_url") for loc in locations if loc.get("is_oa") and loc.get("pdf_url")]
-    return list(dict.fromkeys(str(url) for url in urls))
+    found: dict[str, OaLocation] = {}
+    for loc in locations:
+        url = loc.get("pdf_url")
+        if loc.get("is_oa") and url and url not in found:
+            found[url] = OaLocation(str(url), _is_published(loc))
+    return list(found.values())
 
 
 class OpenAlexFinder:
@@ -40,14 +58,14 @@ class OpenAlexFinder:
         """
         self._client = client
 
-    def find_pdf_urls(self, doi: str) -> list[str]:
-        """Look up OA PDF URLs for a DOI.
+    def find_pdf_locations(self, doi: str) -> list[OaLocation]:
+        """Look up open-access PDF copies for a DOI.
 
         Args:
             doi: DOI without the `https://doi.org/` prefix.
 
         Returns:
-            Candidate PDF URLs, best first; empty when OpenAlex does not know the DOI.
+            Copies with their version, best first; empty when OpenAlex does not know the DOI.
 
         Raises:
             SourceError: On network errors or unexpected HTTP status.
@@ -64,4 +82,4 @@ class OpenAlexFinder:
             return []
         if resp.status_code != 200:
             raise SourceError(f"openalex status {resp.status_code}")
-        return parse_openalex_pdf_urls(resp.json())
+        return parse_openalex_locations(resp.json())

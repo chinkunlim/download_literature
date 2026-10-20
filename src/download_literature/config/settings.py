@@ -47,6 +47,7 @@ class AppConfig:
         library_email: University e-mail for the OpenAthens sign-in (`USER_EMAIL`).
         library_password: Its password (`USER_PASSWORD`); hidden from repr so it never reaches logs.
         openathens_domain: OpenAthens organisation domain for the redirector; empty = plain DOI links.
+        ebsco_profile: Library's EBSCO Discovery profile id (`research.ebsco.com/c/<id>`); empty = skip.
     """
 
     app_env: str = "development"
@@ -58,6 +59,7 @@ class AppConfig:
     library_email: str = ""
     library_password: str = field(default="", repr=False)
     openathens_domain: str = "ndhu.edu.tw"
+    ebsco_profile: str = "3pnjf3"
 
     @property
     def literature_dir(self) -> Path:
@@ -156,4 +158,5 @@ def load_config() -> AppConfig:
         library_email=os.environ.get("USER_EMAIL", "").strip(),
         library_password=os.environ.get("USER_PASSWORD", ""),
         openathens_domain=os.environ.get("OPENATHENS_DOMAIN", "ndhu.edu.tw").strip(),
+        ebsco_profile=os.environ.get("EBSCO_PROFILE", "3pnjf3").strip(),
     )

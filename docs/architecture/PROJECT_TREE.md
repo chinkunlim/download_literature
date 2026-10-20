@@ -72,6 +72,7 @@ download_literature/
 │   ├── adr/                                # [架構決策庫] 一決定一檔案
 │   │   ├── 001-literature-download-strategy.md
 │   │   ├── 002-apa-list-conversion.md
+│   │   ├── 003-version-of-record-first.md
 │   │   ├── _TEMPLATE.md                    # ADR 範本 (tracker_cli 會套用)
 │   │   └── DECISIONS.md                    # 架構決策總表
 │   ├── architecture/                       # [系統架構與資料模型]
@@ -104,6 +105,7 @@ download_literature/
 │       │   │   ├── __init__.py
 │       │   │   ├── browser.py
 │       │   │   ├── crossref.py
+│       │   │   ├── ebsco.py
 │       │   │   ├── files.py
 │       │   │   ├── http_pdf.py
 │       │   │   ├── openalex.py

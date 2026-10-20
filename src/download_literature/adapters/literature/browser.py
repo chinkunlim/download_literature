@@ -163,10 +163,21 @@ class BrowserPublisherFetcher:
             self._pw.stop()
         logger.info("browser closed")
 
-    def fetch_pdf(self, reference: Reference) -> tuple[bytes, str] | None:
-        """Download the PDF via the publisher (DOI), then via the reference's own URLs in the browser.
+    def new_page(self) -> Page:
+        """Open a new tab in the shared Chrome profile (also used by the EBSCO route).
 
-        The second route covers author / university copies on sites that reject plain HTTP clients.
+        Returns:
+            The new page.
+
+        Raises:
+            SourceError: When the browser was not started.
+        """
+        if self._ctx is None:
+            raise SourceError("browser not started")
+        return self._ctx.new_page()
+
+    def fetch_pdf(self, reference: Reference) -> tuple[bytes, str] | None:
+        """Download the publisher PDF by opening the DOI (through OpenAthens).
 
         Args:
             reference: Reference with a DOI.
@@ -175,21 +186,34 @@ class BrowserPublisherFetcher:
             (PDF bytes, PDF URL), or None when no PDF could be obtained.
 
         Raises:
-            SourceError: When the browser was not started.
+            SourceError: When the browser was not started or the page fails.
         """
-        if self._ctx is None:
-            raise SourceError("browser not started")
-        page = self._ctx.new_page()
+        page = self.new_page()
         try:
-            for url in [None, *reference.pdf_urls]:  # None = publisher route via the DOI
-                try:
-                    got = self._via_publisher(page, reference) if url is None else self._via_site(page, url)
-                except PlaywrightError as exc:
-                    logger.warning("browser route failed key=%s: %s", reference.key, exc.message)
-                    continue
-                if got is not None:
-                    return got
-            return None
+            return self._via_publisher(page, reference)
+        except PlaywrightError as exc:
+            raise SourceError(f"browser error: {exc.message}") from exc
+        finally:
+            page.close()
+
+    def fetch(self, url: str) -> bytes | None:
+        """Download an author / repository PDF from inside its own site (for sites that block plain HTTP).
+
+        Args:
+            url: PDF URL.
+
+        Returns:
+            PDF bytes, or None.
+
+        Raises:
+            SourceError: When the browser was not started or the page fails.
+        """
+        page = self.new_page()
+        try:
+            got = self._via_site(page, url)
+            return got[0] if got else None
+        except PlaywrightError as exc:
+            raise SourceError(f"browser error: {exc.message}") from exc
         finally:
             page.close()
 
@@ -204,7 +228,7 @@ class BrowserPublisherFetcher:
             (PDF bytes, PDF URL), or None.
         """
         page.goto(entry_url(reference.doi, self._domain), wait_until="domcontentloaded", timeout=60_000)
-        self._settle(page)
+        self.settle(page)
         pdf_url = self._find_pdf_url(page)
         logger.info("publisher page key=%s url=%s pdf=%s", reference.key, page.url, pdf_url)
         return self._download(page, pdf_url) if pdf_url else None
@@ -222,7 +246,7 @@ class BrowserPublisherFetcher:
             (PDF bytes, URL), or None.
         """
         page.goto(_origin(pdf_url) + "/", wait_until="domcontentloaded", timeout=60_000)
-        self._settle(page)
+        self.settle(page)
         body = self._fetch_in_page(page, pdf_url)
         return (body, pdf_url) if is_pdf(body) else None
 
@@ -245,7 +269,7 @@ class BrowserPublisherFetcher:
         )
         return sign_in or any(t in title for t in _CHALLENGE_TITLES)
 
-    def _settle(self, page: Page) -> None:
+    def settle(self, page: Page) -> None:
         """Fill the OpenAthens sign-in once, then wait until the user clears any remaining check.
 
         Args:
@@ -347,7 +371,7 @@ class BrowserPublisherFetcher:
         if got is not None:
             return got
         page.goto(pdf_url, wait_until="domcontentloaded", timeout=60_000)
-        self._settle(page)
+        self.settle(page)
         return self._fetch_variants(page, page.url)  # redirects may change the host (e.g. Wiley Compass)
 
     def _fetch_variants(self, page: Page, pdf_url: str) -> tuple[bytes, str] | None:
