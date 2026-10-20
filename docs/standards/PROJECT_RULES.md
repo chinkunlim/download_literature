@@ -5,11 +5,13 @@
 
 ## 1. 領域知識與術語
 
-- （例）「文獻」指學術論文 PDF；「書籍」指教科書 PDF / EPUB。
+- 「文獻清單」是 `DATA_DIR/input/references.json`（key、citation、title、doi、arxiv_id、pdf_urls、kind）；PDF 存在 `DATA_DIR/output/literature/<key>.pdf`。
+- 東華大學（NDHU）用 OpenAthens，redirector 網域 `ndhu.edu.tw`；校內 IP（134.208.x.x）直接授權。
 
 ## 2. 本專案特有的規則
 
-- （例）所有呼叫本機 Ollama 的程式，都要先通過硬體檢查（RAM / 電池）。
+- 帳密只能填在 `*.openathens.net` 頁面（ADR-001）。
+- 每篇下載都要過標題比對才存檔（ISSUE-002）。
 
 ## 3. 和通用規範不同的例外（要寫理由）
 
@@ -17,4 +19,4 @@
 
 ## 4. 禁止事項
 
-- （例）不要修改 `DATA_DIR/input/` 的原始檔（只讀）。
+- 不得自動通過 Cloudflare / CAPTCHA，不得使用影子圖書館（Sci-Hub、LibGen 等）；遇到驗證就停下來等使用者（ADR-001）。

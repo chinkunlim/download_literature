@@ -1,0 +1,31 @@
+{
+  "id": "https://openalex.org/W0000000001",
+  "doi": "https://doi.org/10.3389/fpsyt.2016.00215",
+  "best_oa_location": {
+    "is_oa": true,
+    "pdf_url": "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/pdf",
+    "landing_page_url": "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/full"
+  },
+  "locations": [
+    {
+      "is_oa": true,
+      "pdf_url": "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/pdf",
+      "landing_page_url": "https://www.frontiersin.org/articles/10.3389/fpsyt.2016.00215/full"
+    },
+    {
+      "is_oa": true,
+      "pdf_url": "https://europepmc.org/articles/pmc5222787?pdf=render",
+      "landing_page_url": "https://europepmc.org/articles/pmc5222787"
+    },
+    {
+      "is_oa": false,
+      "pdf_url": "https://paywalled.example.org/x.pdf",
+      "landing_page_url": "https://paywalled.example.org/x"
+    },
+    {
+      "is_oa": true,
+      "pdf_url": null,
+      "landing_page_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5222787"
+    }
+  ]
+}

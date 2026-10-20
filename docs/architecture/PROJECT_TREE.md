@@ -51,6 +51,7 @@ download_literature/
 │   │   │   └── SKILL.md
 │   │   └── catalog.json                    # [Skills 目錄] 各 skill 的分層 (core/stack/optional)、觸發時機與指令
 │   ├── tasks/                              # [任務卡] 建立、接手、交接、完成 (agentctl task)
+│   │   └── TASK-001-literature-downloader-with-opena.json
 │   ├── framework.lock                      # [框架鎖定檔] 框架版本與檔案雜湊，供 update_framework 判斷是否被修改
 │   └── project.toml                        # [專案設定・各專案自訂] 語言、分層、品質門檻、指令、業務規則
 ├── .cursor/                                # [Agent 轉接] Cursor 規則 (自動產生)
@@ -69,12 +70,15 @@ download_literature/
 │       └── 00-project-constitution.md
 ├── docs/                                   # 【工程知識庫】架構、規格、決策、已知問題、維運、規範
 │   ├── adr/                                # [架構決策庫] 一決定一檔案
+│   │   ├── 001-literature-download-strategy.md
 │   │   ├── _TEMPLATE.md                    # ADR 範本 (tracker_cli 會套用)
 │   │   └── DECISIONS.md                    # 架構決策總表
 │   ├── architecture/                       # [系統架構與資料模型]
 │   │   ├── ARCHITECTURE.md                 # 系統架構總覽 (手動) 與自動報告索引
 │   │   └── PROJECT_TREE.md                 # 完整檔案結構樹 (自動產生)
 │   ├── known-issues/                       # [已知問題庫] 一問題一檔案
+│   │   ├── 001-playwright-request-blocked.md
+│   │   ├── 002-openalex-wrong-paper.md
 │   │   ├── _TEMPLATE.md                    # 已知問題範本 (tracker_cli 會套用)
 │   │   └── KNOWN_ISSUES.md                 # 已知問題總表 (🔴/🟡/🟢)
 │   ├── specs/                              # [功能規格書] PRD / API Contract
@@ -94,6 +98,13 @@ download_literature/
 ├── src/                                    # 【核心原始碼層】分層與依賴方向定義於 .agents/project.toml
 │   └── download_literature/
 │       ├── adapters/
+│       │   ├── literature/
+│       │   │   ├── __init__.py
+│       │   │   ├── browser.py
+│       │   │   ├── files.py
+│       │   │   ├── http_pdf.py
+│       │   │   ├── openalex.py
+│       │   │   └── pdf_text.py
 │       │   └── __init__.py
 │       ├── config/
 │       │   ├── __init__.py
@@ -101,17 +112,23 @@ download_literature/
 │       │   └── settings.py
 │       ├── domain/
 │       │   ├── __init__.py
+│       │   ├── literature.py
 │       │   └── models.py
 │       ├── entrypoints/
 │       │   ├── __init__.py
-│       │   └── cli.py
+│       │   ├── cli.py
+│       │   └── fetch_cli.py
 │       ├── services/
 │       │   ├── __init__.py
-│       │   └── greeting.py
+│       │   ├── greeting.py
+│       │   └── literature.py
 │       └── __init__.py
 ├── tests/                                  # 【測試層】單元與整合測試
+│   ├── fixtures/
+│   │   └── openalex_work.json
 │   ├── __init__.py
-│   └── test_greeting.py
+│   ├── test_greeting.py
+│   └── test_literature.py
 ├── .editorconfig
 ├── .env.example                            # [設定範本] 環境變數清單與預設值說明
 ├── .gitignore                              # [版控排除] 排除依賴、機密 .env、憑證與執行期快取

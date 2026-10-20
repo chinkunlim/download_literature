@@ -11,7 +11,7 @@ docs and small test fixtures.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -44,6 +44,9 @@ class AppConfig:
         timeout_seconds: Timeout for outgoing API calls.
         ollama_base_url: Local Ollama endpoint (always 127.0.0.1, never localhost / 0.0.0.0).
         data_dir: Root folder for all data, outside the project folder.
+        library_email: University e-mail for the OpenAthens sign-in (`USER_EMAIL`).
+        library_password: Its password (`USER_PASSWORD`); hidden from repr so it never reaches logs.
+        openathens_domain: OpenAthens organisation domain for the redirector; empty = plain DOI links.
     """
 
     app_env: str = "development"
@@ -52,6 +55,27 @@ class AppConfig:
     timeout_seconds: int = 15
     ollama_base_url: str = "http://127.0.0.1:11434"
     data_dir: Path = Path(DEFAULT_DATA_DIR).expanduser()
+    library_email: str = ""
+    library_password: str = field(default="", repr=False)
+    openathens_domain: str = "ndhu.edu.tw"
+
+    @property
+    def literature_dir(self) -> Path:
+        """Folder for downloaded literature PDFs and the download report.
+
+        Returns:
+            `<data_dir>/output/literature`.
+        """
+        return self.output_dir / "literature"
+
+    @property
+    def browser_profile_dir(self) -> Path:
+        """Persistent Chrome profile used for publisher access (keeps the sign-in between runs).
+
+        Returns:
+            `<data_dir>/state/browser_profile`.
+        """
+        return self.state_dir / "browser_profile"
 
     @property
     def input_dir(self) -> Path:
@@ -129,4 +153,7 @@ def load_config() -> AppConfig:
         timeout_seconds=int(os.environ.get("API_TIMEOUT_SECONDS", "15")),
         ollama_base_url=os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip().rstrip("/"),
         data_dir=data_dir,
+        library_email=os.environ.get("USER_EMAIL", "").strip(),
+        library_password=os.environ.get("USER_PASSWORD", ""),
+        openathens_domain=os.environ.get("OPENATHENS_DOMAIN", "ndhu.edu.tw").strip(),
     )

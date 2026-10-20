@@ -113,5 +113,6 @@ download_literature/
 ├── src/                                    # 【核心原始碼層】分層與依賴方向定義於 .agents/project.toml
 │   └── download_literature/
 └── tests/                                  # 【測試層】單元與整合測試
+    └── fixtures/
 ```
 <!-- TREE_END -->

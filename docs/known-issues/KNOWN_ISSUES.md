@@ -13,3 +13,5 @@
 
 | ISSUE | 狀態 | 標題 | 現象 | 程式與測試 |
 |---|---|---|---|---|
+| [ISSUE-001](001-playwright-request-blocked.md) | 🟢 已根治 (Resolved) | Playwright context.request 下載 PDF 被出版社防護擋下 (403) | 用 page.context.request.get() 下載 Sage / NEJM / T&F 的 PDF 一律回 403 或 HTML 驗證頁，即使頁面本身已正常載入。 | TODO |
+| [ISSUE-002](002-openalex-wrong-paper.md) | 🟡 已規避 (Mitigated) | OpenAlex 開放取用連結可能指向別篇論文 | Braun & Clarke (2006) 的 OpenAlex locations 包含 HAL 與 Dialnet 上完全不同的論文 PDF。 | TODO |
