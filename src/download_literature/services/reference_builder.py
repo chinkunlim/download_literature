@@ -223,6 +223,7 @@ def _to_reference(entry: ApaEntry, work: WorkMeta | None, taken: set[str]) -> Re
         arxiv_id=entry.arxiv_id,
         pdf_urls=entry.urls,
         title=title,
+        author=work.first_author if work and work.first_author else entry.first_author,
     )
 
 
@@ -326,6 +327,7 @@ def _from_work(text: str, work: WorkMeta, taken: set[str], note: str) -> Resolut
         kind=work.kind,
         arxiv_id=_arxiv_id(work.doi),
         title=work.title,
+        author=work.first_author,
     )
     return Resolution(text, ref, work, apa, note)
 

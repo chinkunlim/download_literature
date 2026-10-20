@@ -110,6 +110,7 @@ download_literature/
 │       │   │   ├── http_pdf.py
 │       │   │   ├── metadata.py
 │       │   │   ├── openalex.py
+│       │   │   ├── openlibrary.py
 │       │   │   └── pdf_text.py
 │       │   └── __init__.py
 │       ├── config/
@@ -140,6 +141,7 @@ download_literature/
 │   ├── __init__.py
 │   ├── test_apa.py
 │   ├── test_apa_format.py
+│   ├── test_books.py
 │   ├── test_free_text.py
 │   ├── test_greeting.py
 │   └── test_literature.py

@@ -11,6 +11,7 @@ All notable changes to **download_literature** are documented here
 - feat(literature): convert APA reference lists via Crossref and run the full pipeline in one command (by `@claude-code`)
 - feat(literature): add EBSCO route and prefer versions of record over preprints (by `@claude-code`)
 - feat(literature): format APA 7 references and resolve title-only inputs via Crossref and OpenAlex (by `@claude-code`)
+- feat(literature): look up latest book editions and download public-domain scans via Open Library (by `@claude-code`)
 
 ### Fixed
 - fix(literature): wait for a stable page after bot checks before fetching (TASK-001) (`TASK-001`, by `@claude-code`)

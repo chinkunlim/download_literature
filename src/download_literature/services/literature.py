@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Protocol
 
 from download_literature.domain.literature import (
+    BookInfo,
     ConversionNote,
     DownloadOutcome,
     DownloadStatus,
@@ -141,6 +142,22 @@ class PdfTextReader(Protocol):
         ...
 
 
+class BookFinder(Protocol):
+    """Looks up books (latest edition and free scans)."""
+
+    def find(self, title: str, author: str) -> BookInfo | None:
+        """Look up a book.
+
+        Args:
+            title: Book title.
+            author: First author's family name.
+
+        Returns:
+            Book information, or None when unknown.
+        """
+        ...
+
+
 @dataclass(frozen=True)
 class Sources:
     """Everything the download flow needs.
@@ -152,6 +169,7 @@ class Sources:
         store: Where PDFs are saved.
         pdf_text: Text reader for the title check; None skips the check.
         site: Browser fetcher for listed URLs that plain HTTP cannot fetch; None skips that step.
+        books: Book catalogue (latest edition, public-domain scans); None treats books as manual.
     """
 
     open_access: OpenAccessFinder
@@ -160,6 +178,7 @@ class Sources:
     store: PdfStore
     pdf_text: PdfTextReader | None = None
     site: PdfFetcher | None = None
+    books: BookFinder | None = None
 
 
 def _acceptable(reference: Reference, data: bytes, sources: Sources) -> bool:
@@ -280,6 +299,49 @@ def _obtain(reference: Reference, sources: Sources) -> tuple[bytes, str, bool] |
     return (got[0], got[1], False) if got else None
 
 
+def _book_info(reference: Reference, sources: Sources) -> BookInfo | None:
+    """Look up a book in the catalogue, tolerating failures.
+
+    Args:
+        reference: Book reference.
+        sources: Download sources.
+
+    Returns:
+        Book information, or None.
+    """
+    if sources.books is None or not reference.title:
+        return None
+    try:
+        return sources.books.find(reference.title, reference.author)
+    except SourceError as exc:
+        logger.warning("book lookup failed key=%s: %s", reference.key, exc)
+        return None
+
+
+def _download_book(reference: Reference, sources: Sources) -> DownloadOutcome:
+    """Obtain a book: a free scan, else an institutional e-book (when it has a DOI), else borrow.
+
+    Args:
+        reference: Book reference.
+        sources: Download sources.
+
+    Returns:
+        The outcome; its detail names the latest edition when known.
+    """
+    info = _book_info(reference, sources)
+    edition = f"latest edition: {info.latest_edition}" if info and info.latest_edition else ""
+    got = _try_urls(reference, list(info.public_pdf_urls), sources.http, sources) if info else None
+    if got is None and reference.doi:
+        found = _obtain(reference, sources)
+        got = (found[0], found[1]) if found else None
+    if got is None:
+        detail = "; ".join(x for x in ("book: borrow from the library", edition) if x)
+        return DownloadOutcome(reference, DownloadStatus.MANUAL, detail=detail)
+    path = sources.store.save(reference.key, got[0])
+    logger.info("downloaded book key=%s url=%s bytes=%d", reference.key, got[1], len(got[0]))
+    return DownloadOutcome(reference, DownloadStatus.DOWNLOADED, source=got[1], path=path, detail=edition)
+
+
 def download_reference(reference: Reference, sources: Sources, refresh: bool = False) -> DownloadOutcome:
     """Obtain one reference.
 
@@ -291,12 +353,12 @@ def download_reference(reference: Reference, sources: Sources, refresh: bool = F
     Returns:
         The outcome for this reference.
     """
-    if reference.kind is ReferenceKind.BOOK:
-        return DownloadOutcome(reference, DownloadStatus.MANUAL, detail="book: obtain from the library")
     aside = sources.store.set_aside(reference.key) if refresh else None
     existing = sources.store.existing(reference.key)
     if existing is not None:
         return DownloadOutcome(reference, DownloadStatus.ALREADY_PRESENT, path=existing)
+    if reference.kind is ReferenceKind.BOOK:
+        return _download_book(reference, sources)
     got = _obtain(reference, sources)
     if got is None and aside is not None:
         path = sources.store.restore(reference.key, aside)

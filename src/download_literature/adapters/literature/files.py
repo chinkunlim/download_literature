@@ -36,6 +36,7 @@ def load_references(path: Path) -> list[Reference]:
             arxiv_id=item.get("arxiv_id", ""),
             pdf_urls=tuple(item.get("pdf_urls", [])),
             title=item.get("title", ""),
+            author=item.get("author", ""),
         )
         for item in items
     ]
@@ -146,6 +147,7 @@ def save_references(path: Path, refs: list[Reference]) -> None:
             "doi": ref.doi,
             "arxiv_id": ref.arxiv_id,
             "pdf_urls": list(ref.pdf_urls),
+            "author": ref.author,
         }
         items.append({k: v for k, v in item.items() if v})
     path.parent.mkdir(parents=True, exist_ok=True)

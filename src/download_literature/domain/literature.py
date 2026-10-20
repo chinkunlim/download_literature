@@ -41,6 +41,7 @@ class Reference:
         arxiv_id: arXiv identifier such as `2310.15461`; empty when none.
         pdf_urls: Extra known PDF or landing-page URLs, tried before open-access lookup.
         title: Work title, used to check that a downloaded PDF is the right paper; empty = no check.
+        author: First author's family name (used to look up books); empty when unknown.
     """
 
     key: str
@@ -50,6 +51,7 @@ class Reference:
     arxiv_id: str = ""
     pdf_urls: tuple[str, ...] = ()
     title: str = ""
+    author: str = ""
 
     def direct_urls(self) -> tuple[str, ...]:
         """List URLs that can be tried without any lookup.
@@ -59,6 +61,23 @@ class Reference:
         """
         arxiv = (f"https://arxiv.org/pdf/{self.arxiv_id}",) if self.arxiv_id else ()
         return arxiv + self.pdf_urls
+
+
+@dataclass(frozen=True)
+class BookInfo:
+    """What a library catalogue (Open Library) knows about a book.
+
+    Attributes:
+        latest_year: Year of the newest edition; None when unknown.
+        latest_edition: Newest edition described for people (year, publisher, edition, ISBN, pages).
+        public_pdf_urls: Freely downloadable scans (public domain / open access only).
+        catalog_url: Catalogue page of the book.
+    """
+
+    latest_year: int | None
+    latest_edition: str
+    public_pdf_urls: tuple[str, ...]
+    catalog_url: str
 
 
 @dataclass(frozen=True)
