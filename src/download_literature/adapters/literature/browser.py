@@ -116,6 +116,8 @@ class BrowserPublisherFetcher:
     Use as a context manager so the browser is closed afterwards.
     """
 
+    label = "出版社網站"  # step name shown while this route runs
+
     def __init__(
         self, profile_dir: Path, openathens_domain: str, login: tuple[str, str], wait_seconds: int = 300
     ) -> None:

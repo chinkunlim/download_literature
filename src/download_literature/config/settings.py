@@ -47,6 +47,7 @@ class AppConfig:
         library_email: University e-mail for the OpenAthens sign-in (`USER_EMAIL`).
         library_password: Its password (`USER_PASSWORD`); hidden from repr so it never reaches logs.
         openathens_domain: OpenAthens organisation domain for the redirector; empty = plain DOI links.
+        database_url_override: `DATABASE_URL` from `.env`; empty = SQLite file in `<data_dir>/db/`.
         ebsco_profile: Library's EBSCO Discovery profile id (`research.ebsco.com/c/<id>`); empty = skip.
     """
 
@@ -60,6 +61,16 @@ class AppConfig:
     library_password: str = field(default="", repr=False)
     openathens_domain: str = "ndhu.edu.tw"
     ebsco_profile: str = "3pnjf3"
+    database_url_override: str = ""
+
+    @property
+    def database_url(self) -> str:
+        """SQLAlchemy URL of the database.
+
+        Returns:
+            `DATABASE_URL` when set, else `sqlite:///<data_dir>/db/literature.db`.
+        """
+        return self.database_url_override or f"sqlite:///{self.data_dir / 'db' / 'literature.db'}"
 
     @property
     def literature_dir(self) -> Path:
@@ -159,4 +170,5 @@ def load_config() -> AppConfig:
         library_password=os.environ.get("USER_PASSWORD", ""),
         openathens_domain=os.environ.get("OPENATHENS_DOMAIN", "ndhu.edu.tw").strip(),
         ebsco_profile=os.environ.get("EBSCO_PROFILE", "3pnjf3").strip(),
+        database_url_override=os.environ.get("DATABASE_URL", "").strip(),
     )

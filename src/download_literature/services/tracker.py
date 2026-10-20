@@ -10,43 +10,23 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from typing import Protocol
 
+from download_literature.domain.apa import parse_apa
 from download_literature.domain.literature import DownloadOutcome, DownloadStatus, Reference
-from download_literature.domain.tracker import ItemStatus, TrackedItem
-from download_literature.services.literature import AUTHOR_COPY_NOTE
-from download_literature.services.reference_builder import Resolution, WorkResolver
+from download_literature.domain.tracker import ItemStatus, JobState, TrackedItem
+from download_literature.services.literature import AUTHOR_COPY_NOTE, Sources, download_reference
+from download_literature.services.reference_builder import LOOKUP_FAILED_NOTE, Resolution, WorkResolver
 
 logger = logging.getLogger(__name__)
 
 ResolveFn = Callable[[str, WorkResolver, set[str]], Resolution]
-_RETRY = re.compile(r"重試|retry", re.IGNORECASE)
 # PDFs from these servers are preprints (not peer reviewed), even when no other version exists
 PREPRINT_HOSTS = re.compile(
     r"arxiv\.org|osf\.io|psyarxiv|biorxiv|medrxiv|ssrn\.com|preprints\.org|researchsquare"
 )
 PREPRINT_NOTE = "preprint (not peer reviewed)"
-
-
-def apply_md_edits(items: list[TrackedItem], rows: dict[str, str] | None) -> list[TrackedItem]:
-    """Apply the user's table edits: deleted rows leave the list, '重試' (retry) sets a row to pending.
-
-    Args:
-        items: Current items.
-        rows: Key → status text from the Markdown table; None when the file has no table yet.
-
-    Returns:
-        Updated items in their original order.
-    """
-    if rows is None:
-        return list(items)
-    kept = []
-    for item in items:
-        if item.key not in rows:
-            logger.info("item removed by user key=%s", item.key)
-            continue
-        kept.append(replace(item, status=ItemStatus.PENDING) if _RETRY.search(rows[item.key]) else item)
-    return kept
 
 
 def _identity(ref: Reference) -> set[str]:
@@ -77,54 +57,6 @@ def _next_unresolved_key(items: list[TrackedItem]) -> str:
     while f"Unresolved_{n}" in keys:
         n += 1
     return f"Unresolved_{n}"
-
-
-def _new_item(line: str, res: Resolution, items: list[TrackedItem]) -> TrackedItem:
-    """Build the list item for a newly added line.
-
-    Args:
-        line: The user's line.
-        res: Its resolution.
-        items: Items so far (for a free `Unresolved_N` key).
-
-    Returns:
-        A pending item, or a not-found item when the work was not identified.
-    """
-    if res.reference is None:
-        return TrackedItem(
-            _next_unresolved_key(items), line, None, res.apa, ItemStatus.NOT_FOUND, note=res.note
-        )
-    return TrackedItem(res.reference.key, line, res.reference, res.apa, ItemStatus.PENDING, check=res.note)
-
-
-def add_new_entries(
-    items: list[TrackedItem], lines: list[str], resolver: WorkResolver, resolve: ResolveFn
-) -> tuple[list[TrackedItem], list[str]]:
-    """Identify new lines and add them to the list.
-
-    Args:
-        items: Current items.
-        lines: New lines from the pending section.
-        resolver: Metadata service.
-        resolve: Function turning one line into a Resolution (`reference_builder.resolve_entry`).
-
-    Returns:
-        (items with the new ones appended, lines skipped because the work is already listed).
-    """
-    result = list(items)
-    taken = {i.key for i in items}
-    known = set().union(*(_identity(i.reference) for i in items if i.reference))
-    skipped = []
-    for line in lines:
-        res = resolve(line, resolver, taken)
-        if res.reference is not None and _identity(res.reference) & known:
-            skipped.append(line)
-            continue
-        item = _new_item(line, res, result)
-        known |= _identity(item.reference) if item.reference else set()
-        result.append(item)
-    logger.info("new entries=%d added=%d skipped=%d", len(lines), len(result) - len(items), len(skipped))
-    return result, skipped
 
 
 def select_items(items: list[TrackedItem], interactive: bool) -> list[TrackedItem]:
@@ -177,6 +109,25 @@ def _note(outcome: DownloadOutcome) -> str:
     return outcome.detail
 
 
+def apply_outcome(item: TrackedItem, outcome: DownloadOutcome) -> TrackedItem:
+    """Write one download outcome into its item.
+
+    Args:
+        item: The item that was processed.
+        outcome: Its download outcome.
+
+    Returns:
+        The item with status, file, note and source updated.
+    """
+    return replace(
+        item,
+        status=_status(item.status, outcome),
+        file=outcome.path.name if outcome.path else "",
+        note=_note(outcome),
+        source=outcome.source or item.source,
+    )
+
+
 def apply_outcomes(items: list[TrackedItem], outcomes: list[DownloadOutcome]) -> list[TrackedItem]:
     """Write download outcomes back into the list.
 
@@ -188,22 +139,7 @@ def apply_outcomes(items: list[TrackedItem], outcomes: list[DownloadOutcome]) ->
         Items with status, file, note and source updated for processed keys.
     """
     by_key = {o.reference.key: o for o in outcomes}
-    updated = []
-    for item in items:
-        outcome = by_key.get(item.key)
-        if outcome is None:
-            updated.append(item)
-            continue
-        updated.append(
-            replace(
-                item,
-                status=_status(item.status, outcome),
-                file=outcome.path.name if outcome.path else "",
-                note=_note(outcome),
-                source=outcome.source or item.source,
-            )
-        )
-    return updated
+    return [apply_outcome(i, by_key[i.key]) if i.key in by_key else i for i in items]
 
 
 def _merge_reference(old: Reference, found: Reference | None) -> Reference:
@@ -227,39 +163,297 @@ def _merge_reference(old: Reference, found: Reference | None) -> Reference:
     )
 
 
-def refresh_identification(
-    items: list[TrackedItem], resolver: WorkResolver, resolve: ResolveFn
-) -> list[TrackedItem]:
-    """Give migrated items their APA text and identify again items set back to pending without a reference.
+class ItemStore(Protocol):
+    """Where the list lives (the SQL store in production)."""
+
+    def list_items(self) -> list[TrackedItem]:
+        """Return all items in order.
+
+        Returns:
+            Items.
+        """
+        ...
+
+    def get(self, key: str) -> TrackedItem | None:
+        """Return one item.
+
+        Args:
+            key: Item key.
+
+        Returns:
+            The item, or None when deleted.
+        """
+        ...
+
+    def add(self, item: TrackedItem) -> None:
+        """Append an item.
+
+        Args:
+            item: New item.
+        """
+        ...
+
+    def update(self, item: TrackedItem) -> bool:
+        """Update an existing item.
+
+        Args:
+            item: Item with new values.
+
+        Returns:
+            False when it no longer exists.
+        """
+        ...
+
+    def delete(self, key: str) -> bool:
+        """Remove an item.
+
+        Args:
+            key: Item key.
+
+        Returns:
+            False when it did not exist.
+        """
+        ...
+
+    def replace_key(self, old_key: str, item: TrackedItem) -> bool:
+        """Replace an item whose key changes.
+
+        Args:
+            old_key: Current key.
+            item: New values.
+
+        Returns:
+            False when the old item no longer exists.
+        """
+        ...
+
+    def set_stage(self, key: str, stage: str) -> None:
+        """Record the step an item is in.
+
+        Args:
+            key: Item key.
+            stage: Step name; empty when idle.
+        """
+        ...
+
+    def start_job(self, kind: str, total: int) -> int:
+        """Record a new job.
+
+        Args:
+            kind: Job kind.
+            total: Number of items.
+
+        Returns:
+            Job id.
+        """
+        ...
+
+    def advance_job(self, job_id: int, done: int, message: str) -> None:
+        """Update job progress.
+
+        Args:
+            job_id: Job id.
+            done: Items finished.
+            message: Progress text.
+        """
+        ...
+
+    def finish_job(self, job_id: int, state: JobState, message: str) -> None:
+        """Mark a job finished.
+
+        Args:
+            job_id: Job id.
+            state: Done or failed.
+            message: Summary.
+        """
+        ...
+
+
+def split_pending(text: str) -> list[str]:
+    """Split the pending text into entries.
+
+    Bullets ('- ', '* ', '1.') start entries; blank lines separate entries; inside a block, a line without
+    an APA date continues the previous line only when that line is an APA reference (wrapped text),
+    otherwise every line (e.g. a list of titles) is its own entry.
 
     Args:
-        items: All items.
+        text: Pending section text.
+
+    Returns:
+        Entries with whitespace normalised.
+    """
+    entries: list[str] = []
+    joinable = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith((">", "#")):
+            joinable = False
+            continue
+        bullet = re.match(r"^(?:[-*+•]|\d+[.)])\s+", line)
+        line = re.sub(r"\s+", " ", line[bullet.end() :] if bullet else line).strip()
+        if not line:
+            continue
+        has_date = _has_apa_date(line)
+        if joinable and not bullet and not has_date:
+            entries[-1] = f"{entries[-1]} {line}"
+            continue
+        entries.append(line)
+        joinable = has_date
+    return entries
+
+
+def _has_apa_date(line: str) -> bool:
+    """Tell whether a line contains an APA date such as `(2019).`.
+
+    Args:
+        line: Text.
+
+    Returns:
+        True when it parses as the start of an APA reference.
+    """
+    try:
+        parse_apa(line)
+    except ValueError:
+        return False
+    return True
+
+
+def download_items(
+    store: ItemStore, keys: list[str], sources: Sources, refresh: frozenset[str] = frozenset()
+) -> int:
+    """Download items one by one, recording each step and the result as it happens.
+
+    Items deleted meanwhile are skipped (never re-created).
+
+    Args:
+        store: Item store.
+        keys: Keys to process, in order.
+        sources: Download sources.
+        refresh: Keys whose existing PDF should be replaced by a better copy if found.
+
+    Returns:
+        The job id.
+    """
+    job_id = store.start_job("download", len(keys))
+    tracked = replace(sources, progress=store.set_stage)
+    try:
+        for done, key in enumerate(keys, start=1):
+            item = store.get(key)
+            if item is not None and item.reference is not None:
+                store.set_stage(key, "開始")
+                outcome = download_reference(item.reference, tracked, key in refresh)
+                store.update(apply_outcome(item, outcome))
+                store.set_stage(key, "")
+            store.advance_job(job_id, done, key)
+    except Exception as exc:
+        for key in keys:
+            store.set_stage(key, "")
+        store.finish_job(job_id, JobState.FAILED, str(exc))
+        raise
+    store.finish_job(job_id, JobState.DONE, f"{len(keys)} processed")
+    return job_id
+
+
+def queue_entries(store: ItemStore, lines: list[str]) -> list[str]:
+    """Add raw entries at once as pending items (identified later, during processing).
+
+    Args:
+        store: Item store.
+        lines: Entries as the user wrote them.
+
+    Returns:
+        Keys of the queued items.
+    """
+    items = store.list_items()
+    keys = []
+    for line in (raw.strip() for raw in lines):
+        if not line:
+            continue
+        item = TrackedItem(_next_unresolved_key(items), line, None, line, ItemStatus.PENDING)
+        store.add(item)
+        items.append(item)
+        keys.append(item.key)
+    logger.info("queued entries=%d", len(keys))
+    return keys
+
+
+@dataclass(frozen=True)
+class IdentifyResult:
+    """Outcome of identifying pending entries.
+
+    Attributes:
+        changed: Items identified or updated.
+        duplicates: Entries removed because the work was already in the list.
+    """
+
+    changed: int
+    duplicates: list[str]
+
+
+def _identified(item: TrackedItem, res: Resolution) -> TrackedItem:
+    """Apply a resolution to a pending raw entry.
+
+    Args:
+        item: Pending item without a reference.
+        res: Its resolution.
+
+    Returns:
+        Identified item (pending), not-found item, or still-pending item when the lookup failed.
+    """
+    if res.reference is not None:
+        return replace(
+            item, key=res.reference.key, reference=res.reference, apa=res.apa, check=res.note, note=""
+        )
+    if res.note.startswith(LOOKUP_FAILED_NOTE):  # temporary: try again next time (not "not found")
+        return replace(item, note=res.note)
+    return replace(item, status=ItemStatus.NOT_FOUND, apa=res.apa, note=res.note)
+
+
+def _complete_migrated(
+    store: ItemStore, item: TrackedItem, resolver: WorkResolver, resolve: ResolveFn
+) -> None:
+    """Give an item migrated from the old list its APA text and missing reference fields.
+
+    Args:
+        store: Item store.
+        item: Migrated item (has a reference, no APA yet).
+        resolver: Metadata service.
+        resolve: Function turning one line into a Resolution.
+    """
+    assert item.reference is not None
+    res = resolve(item.input or item.reference.citation, resolver, set())
+    merged = _merge_reference(item.reference, res.reference)
+    store.update(replace(item, apa=res.apa, reference=merged, check=res.note))
+
+
+def identify_pending(store: ItemStore, resolver: WorkResolver, resolve: ResolveFn) -> IdentifyResult:
+    """Identify pending raw entries and give migrated items their APA text.
+
+    Args:
+        store: Item store.
         resolver: Metadata service.
         resolve: Function turning one line into a Resolution.
 
     Returns:
-        Updated items.
+        Number of items changed and entries dropped as duplicates.
     """
+    items = store.list_items()
+    known = set().union(*(_identity(i.reference) for i in items if i.reference))
     taken = {i.key for i in items}
-    updated = []
+    changed, duplicates = 0, []
     for item in items:
         if item.reference is not None and not item.apa:
-            res = resolve(item.input or item.reference.citation, resolver, set())
-            item = replace(
-                item, apa=res.apa, reference=_merge_reference(item.reference, res.reference), check=res.note
-            )
-        elif item.reference is None and item.status is ItemStatus.PENDING:
-            res = resolve(item.input, resolver, taken)
-            status = ItemStatus.PENDING if res.reference else ItemStatus.NOT_FOUND
-            key = res.reference.key if res.reference else item.key
-            item = replace(
-                item,
-                key=key,
-                reference=res.reference,
-                apa=res.apa,
-                status=status,
-                note="" if res.reference else res.note,
-                check=res.note if res.reference else "",
-            )
-        updated.append(item)
-    return updated
+            _complete_migrated(store, item, resolver, resolve)
+            changed += 1
+            continue
+        if item.reference is not None or item.status is not ItemStatus.PENDING:
+            continue
+        new = _identified(item, resolve(item.input, resolver, taken))
+        if new.reference is not None and _identity(new.reference) & known:
+            store.delete(item.key)
+            duplicates.append(item.input)
+            continue
+        known |= _identity(new.reference) if new.reference else set()
+        store.replace_key(item.key, new) if new.key != item.key else store.update(new)
+        changed += 1
+    return IdentifyResult(changed, duplicates)

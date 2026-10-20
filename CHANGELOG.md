@@ -14,6 +14,7 @@ All notable changes to **download_literature** are documented here
 - feat(literature): look up latest book editions and download public-domain scans via Open Library (by `@claude-code`)
 - feat(literature): skip steps that need a person and mark them needs_review unless --interactive (by `@claude-code`)
 - feat(literature): use a Markdown reference list as input and APA 7 output, processing only new entries (by `@claude-code`)
+- feat(literature): store the list in SQLite, share a runner across front ends, split references.md and report.md (by `@claude-code`)
 
 ### Fixed
 - fix(literature): wait for a stable page after bot checks before fetching (TASK-001) (`TASK-001`, by `@claude-code`)

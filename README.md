@@ -4,29 +4,29 @@
 
 ## 使用方式
 
-1. 打開 `DATA_DIR/input/references.md`（第一次執行會自動建立），在「待處理」每行寫一筆文獻。可以是完整 APA、作者＋標題、只有標題，或 DOI。
-2. 執行：
+**輸入**：在 `DATA_DIR/input/references.md` 的「待處理」加入文獻（每筆一段，可以是 APA、作者＋標題、標題或 DOI），或用網頁／指令新增。
+**結果**：`DATA_DIR/output/report.md`（每篇的 APA、狀態、檔案、來源、備註，以及可複製的 APA 7 清單）；PDF 在 `DATA_DIR/output/literature/`。
 
 ```bash
 uv run fetch-literature
 ```
 
-3. 程式會辨識新文獻、產生 APA 7th、下載 PDF，並把結果寫回同一個 md 檔的表格（狀態、檔案連結、備註）。PDF 在 `DATA_DIR/output/literature/`。
-
 | 指令 | 用途 |
 |---|---|
-| `uv run fetch-literature --interactive` | 在電腦前時用：處理「⚠️ 需人工處理」的條目，遇到驗證會等你在 Chrome 完成 |
+| `uv run fetch-literature --add "標題或 APA"` | 新增文獻（可重複 `--add`） |
+| `uv run fetch-literature --status` | 只看目前清單狀態 |
+| `uv run fetch-literature --interactive` | 在電腦前時用：處理「⚠️ 需人工處理」，遇到驗證會等你在 Chrome 完成 |
+| `uv run fetch-literature --retry <key>` / `--delete <key>` | 重新處理／移除某筆 |
 | `uv run fetch-literature --identify-only` | 只辨識新文獻、產生 APA，不下載 |
 | `uv run fetch-literature --no-browser` | 只抓開放取用版本，不開 Chrome |
-| `uv run fetch-literature --refresh <key>` | 嘗試把作者稿／預印本換成正式版（找不到會保留原檔） |
-| `uv run fetch-literature --only <key>,<key>` | 只處理指定條目 |
+| `uv run fetch-literature --refresh <key>` | 嘗試把作者稿／預印本換成正式版 |
 
 說明：
-- 只處理新加入的文獻，以及狀態欄改成「重試」的列；刪除表格的整列就是從清單移除。
-- 下載順序：正式版優先（出版社的免費正式版 → EBSCO → 出版社網站 → 作者稿／預印本）；每篇都核對 PDF 標題。
-- 預設不等人工：遇到機器人驗證會標「⚠️ 需人工處理」並繼續，等你在電腦前再用 `--interactive`。程式不會自動點驗證。
-- 書籍：公版書會從 Internet Archive 下載；有版權的書標「📕 需借閱」，並列出最新版本資訊。
-- 校外使用時，`.env` 的 `USER_EMAIL` / `USER_PASSWORD` 只會填在 OpenAthens 登入頁。
+- 資料存在 `DATA_DIR/db/literature.db`；md 檔每次執行後自動更新。一次只會有一個處理工作在跑。
+- 下載順序：正式版優先（出版社的免費正式版 → EBSCO → 出版社網站 → 作者稿／預印本），每篇核對 PDF 標題。
+- 預設不等人工：遇到機器人驗證標「⚠️ 需人工處理」並繼續；程式不會自動點驗證。
+- 書籍：公版書從 Internet Archive 下載；有版權的書標「📕 需借閱」並列出最新版本。
+- 校外時，`.env` 的 `USER_EMAIL` / `USER_PASSWORD` 只會填在 OpenAthens 登入頁。
 
 ## 第一次在這台電腦使用
 

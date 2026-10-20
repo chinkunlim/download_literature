@@ -1,27 +1,21 @@
-"""Markdown reference list (ADR-005): the file the user edits and reads.
+"""Input list file `references.md` (ADR-005, ADR-006): what the user wants downloaded.
 
 Layout:
-    # 文獻清單
+    # 文獻清單（輸入）
     > instructions
-    ## 待處理            ← the user adds one line per work (APA, author + title, title or DOI)
-    ## 文獻清單（APA 7th） ← table written by the program: Key | APA 7th | 狀態 | 檔案 | 備註
+    ## 待處理      ← the user adds entries: one per paragraph or bullet (APA, author + title, title, DOI)
+    ## 已處理      ← written by the program: one compact line per item (status, key, start of the APA text)
 
-`parse_tracker_md` reads the user's edits (new lines; key → status cell, where '重試' means retry and a
-removed row means delete). `render_tracker_md` writes the whole file, rows in APA alphabetical order,
-statuses and notes in Chinese.
+Full results live in `output/report.md` and on the web page; this file only says what to fetch.
+Shared helpers (status labels, Chinese notes, source names) are also used by `report_md`.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from download_literature.domain.tracker import ItemStatus, TrackedItem
-
-PENDING_HEADING = "## 待處理"
-TABLE_HEADING = "## 文獻清單（APA 7th）"
-TABLE_HEADER = "| Key | APA 7th | 狀態 | 檔案 | 備註 |"
 
 STATUS_LABELS = {
     ItemStatus.PENDING: "⏳ 待處理",
@@ -33,18 +27,6 @@ STATUS_LABELS = {
     ItemStatus.NOT_FOUND: "❓ 找不到文獻",
 }
 
-INTRO = "\n".join(
-    [
-        "> **使用方式**：在「待處理」每行寫一筆文獻（完整 APA、作者＋標題、只有標題或 DOI 都可以），"
-        "然後執行 `uv run fetch-literature`。",
-        "> 程式只處理新加入的文獻，以及狀態欄改成「重試」的列；處理完會移到下方表格，並補上 APA 7th 格式。"
-        "刪除表格的整列，就是把那筆文獻從清單移除。",
-        ">",
-        "> **狀態說明**：✅ 已下載（正式版）｜🟡 已下載（作者稿／預印本，引用頁碼請以正式版為準）｜"
-        "⚠️ 需人工處理（在電腦前執行 `uv run fetch-literature --interactive`）｜📕 需借閱｜"
-        "❌ 無法取得（可寫信向作者索取或申請館際合作）｜❓ 找不到文獻（請補上作者、年份或 DOI 後重新加入）",
-    ]
-)
 
 _NOTE_TRANSLATIONS: list[tuple[str, str]] = [
     (
@@ -70,68 +52,6 @@ _NOTE_TRANSLATIONS: list[tuple[str, str]] = [
 _SOURCE_NAMES = {"research.ebsco.com": "EBSCO", "arxiv.org": "arXiv", "archive.org": "Internet Archive"}
 
 
-@dataclass(frozen=True)
-class TrackerEdits:
-    """What the user changed in the Markdown file.
-
-    Attributes:
-        pending: New lines from the pending section.
-        rows: Key → status cell of each table row; None when the file has no table.
-    """
-
-    pending: list[str]
-    rows: dict[str, str] | None
-
-
-def _split_row(line: str) -> list[str]:
-    """Split a Markdown table row into cells (escaped pipes stay in the cell).
-
-    Args:
-        line: Row text starting with '|'.
-
-    Returns:
-        Cell texts, stripped.
-    """
-    cells = re.split(r"(?<!\\)\|", line.strip().strip("|"))
-    return [c.strip().replace("\\|", "|") for c in cells]
-
-
-def parse_tracker_md(text: str) -> TrackerEdits:
-    """Read the user's edits from the list file.
-
-    Args:
-        text: Markdown file content (empty for a new file).
-
-    Returns:
-        New pending lines and the table's key → status cells.
-    """
-    pending: list[str] = []
-    rows: dict[str, str] | None = None
-    section = ""
-    for line in text.splitlines():
-        if line.startswith("## "):
-            section = (
-                "pending"
-                if line.startswith(PENDING_HEADING)
-                else "table"
-                if line.startswith(TABLE_HEADING)
-                else ""
-            )
-            if section == "table":
-                rows = {}
-            continue
-        stripped = line.strip()
-        if section == "pending" and stripped and not stripped.startswith(">"):
-            entry = re.sub(r"^(?:[-*+•]|\d+[.)])\s*", "", stripped).strip()
-            if entry:
-                pending.append(entry)
-        elif section == "table" and rows is not None and stripped.startswith("|"):
-            cells = _split_row(stripped)
-            if len(cells) >= 3 and cells[0] not in ("Key", "") and not set(cells[0]) <= {"-", ":"}:
-                rows[cells[0]] = cells[2]
-    return TrackerEdits(pending, rows)
-
-
 def translate_note(note: str) -> str:
     """Translate the program's English notes into Chinese for the list.
 
@@ -146,7 +66,7 @@ def translate_note(note: str) -> str:
     return note.replace("; ", "；")
 
 
-def _source_name(url: str) -> str:
+def source_name(url: str) -> str:
     """Short name of where a PDF came from.
 
     Args:
@@ -159,59 +79,80 @@ def _source_name(url: str) -> str:
     return next((name for domain, name in _SOURCE_NAMES.items() if host.endswith(domain)), host)
 
 
-def _cell(text: str) -> str:
-    """Make text safe for a table cell.
+PENDING_HEADING = "## 待處理"
+DONE_HEADING = "## 已處理"
+_INPUT_INTRO = [
+    "> 在「待處理」加入文獻：每筆一段（或每行一個 `- ` 項目），",
+    "> 可以是完整 APA、作者＋標題、只有標題或 DOI。從 Word 貼上的 APA 換行也沒關係，",
+    "> 筆與筆之間空一行即可。執行 `uv run fetch-literature` 或在網頁按「開始處理」。",
+    "> 處理完的文獻會移到「已處理」。完整結果請看 `output/report.md` 或網頁。",
+]
+
+
+def pending_text(text: str) -> str:
+    """Return the raw text of the pending section.
 
     Args:
-        text: Any text.
+        text: Content of references.md (empty for a new file).
 
     Returns:
-        Single-line text with pipes escaped.
+        Text between "## 待處理" and the next heading.
     """
-    return re.sub(r"\s+", " ", text).replace("|", "\\|").strip()
+    match = re.search(rf"^{PENDING_HEADING}[^\n]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    return match.group(1) if match else ""
 
 
-def _row(item: TrackedItem, file_base: str) -> str:
-    """Render one table row.
+def apa_sort_key(item: TrackedItem) -> str:
+    """Sort key for APA reference-list order.
 
     Args:
         item: List item.
-        file_base: Path from the Markdown file to the PDF folder.
 
     Returns:
-        Markdown row.
+        Lower-case letters and digits of the APA text.
     """
-    link = f"[{item.file}]({file_base}/{item.file})" if item.file else ""
-    source = f"來源：{_source_name(item.source)}" if item.source and item.file else ""
-    notes = "；".join(x for x in (translate_note(item.check), translate_note(item.note), source) if x)
-    cells = [item.key, item.apa, STATUS_LABELS[item.status], link, notes]
-    return "| " + " | ".join(_cell(c) for c in cells) + " |"
+    return re.sub(r"[^a-z0-9 ]", "", item.apa.lower())
 
 
-def render_tracker_md(items: list[TrackedItem], file_base: str) -> str:
-    """Write the whole list file.
+def short_apa(item: TrackedItem, length: int = 90) -> str:
+    """Start of the APA text, without Markdown italics, for one-line lists.
 
     Args:
-        items: All items.
-        file_base: Path from the Markdown file to the PDF folder (used for file links).
+        item: List item.
+        length: Maximum characters.
 
     Returns:
-        Markdown text with an empty pending section and the table in APA alphabetical order.
+        Shortened text.
     """
-    rows = [_row(i, file_base) for i in sorted(items, key=lambda i: re.sub(r"[^a-z0-9 ]", "", i.apa.lower()))]
+    text = item.apa.replace("*", "")
+    return text if len(text) <= length else text[: length - 1].rstrip() + "…"
+
+
+def render_input_md(items: list[TrackedItem], pending: list[str]) -> str:
+    """Write references.md.
+
+    Args:
+        items: All processed items.
+        pending: Entries still waiting (normally empty after a run).
+
+    Returns:
+        Markdown text.
+    """
+    done = [
+        f"- {STATUS_LABELS[i.status].split()[0]} {i.key} — {short_apa(i)}"
+        for i in sorted(items, key=apa_sort_key)
+    ]
     lines = [
-        "# 文獻清單",
+        "# 文獻清單（輸入）",
         "",
-        INTRO,
+        *_INPUT_INTRO,
         "",
         PENDING_HEADING,
         "",
-        "- ",
+        *pending,
         "",
-        TABLE_HEADING,
+        f"{DONE_HEADING}（{len(items)} 筆）",
         "",
-        TABLE_HEADER,
-        "|---|---|---|---|---|",
-        *rows,
+        *done,
     ]
     return "\n".join(lines) + "\n"

@@ -40,7 +40,7 @@ lint = "uv run ruff check . && uv run ruff format --check ."
 # Static type check (mypy strict for Python); leave empty to disable
 typecheck = "uv run mypy"
 # Database migrations up to date and matching the ORM models (Alembic)
-dbcheck = ""
+dbcheck = "uv run alembic upgrade head && uv run alembic check"
 # Output-quality evaluation (`agentctl check --evals`)
 evals = ""
 

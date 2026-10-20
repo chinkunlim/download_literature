@@ -75,6 +75,7 @@ download_literature/
 │   │   ├── 003-version-of-record-first.md
 │   │   ├── 004-unattended-mode-and-books.md
 │   │   ├── 005-markdown-reference-list.md
+│   │   ├── 006-sqlite-store-and-runner.md
 │   │   ├── _TEMPLATE.md                    # ADR 範本 (tracker_cli 會套用)
 │   │   └── DECISIONS.md                    # 架構決策總表
 │   ├── architecture/                       # [系統架構與資料模型]
@@ -103,6 +104,16 @@ download_literature/
 ├── src/                                    # 【核心原始碼層】分層與依賴方向定義於 .agents/project.toml
 │   └── download_literature/
 │       ├── adapters/
+│       │   ├── db/
+│       │   │   ├── migrations/
+│       │   │   │   ├── versions/
+│       │   │   │   │   └── fe8c0da8955b_create_items_and_jobs_tables.py
+│       │   │   │   ├── env.py
+│       │   │   │   └── script.py.mako
+│       │   │   ├── __init__.py
+│       │   │   ├── engine.py
+│       │   │   ├── models.py
+│       │   │   └── repository.py
 │       │   ├── literature/
 │       │   │   ├── __init__.py
 │       │   │   ├── browser.py
@@ -114,8 +125,10 @@ download_literature/
 │       │   │   ├── openalex.py
 │       │   │   ├── openlibrary.py
 │       │   │   ├── pdf_text.py
+│       │   │   ├── report_md.py
 │       │   │   └── tracker_md.py
-│       │   └── __init__.py
+│       │   ├── __init__.py
+│       │   └── locks.py
 │       ├── config/
 │       │   ├── __init__.py
 │       │   ├── logging_setup.py
@@ -130,7 +143,8 @@ download_literature/
 │       ├── entrypoints/
 │       │   ├── __init__.py
 │       │   ├── cli.py
-│       │   └── fetch_cli.py
+│       │   ├── fetch_cli.py
+│       │   └── runner.py
 │       ├── services/
 │       │   ├── __init__.py
 │       │   ├── greeting.py
@@ -147,15 +161,20 @@ download_literature/
 │   ├── test_apa.py
 │   ├── test_apa_format.py
 │   ├── test_books.py
+│   ├── test_db.py
 │   ├── test_free_text.py
 │   ├── test_greeting.py
 │   ├── test_literature.py
-│   └── test_tracker.py
+│   ├── test_locks.py
+│   ├── test_markdown_files.py
+│   ├── test_tracker.py
+│   └── test_workflow.py
 ├── .editorconfig
 ├── .env.example                            # [設定範本] 環境變數清單與預設值說明
 ├── .gitignore                              # [版控排除] 排除依賴、機密 .env、憑證與執行期快取
 ├── .python-version                         # [Python 版本釘選] 供 uv / pyenv / mise 自動讀取
 ├── AGENTS.md                               # [AI 協作憲法・唯一規則來源] 所有 AI Agent 共用的開發原則與 Skills 路由
+├── alembic.ini
 ├── CHANGELOG.md                            # [版本歷史] commit 寫入 Unreleased；agentctl finish --tag 發布版本
 ├── CLAUDE.md                               # [Agent 轉接檔] Claude Code 入口，匯入 AGENTS.md (自動產生)
 ├── GEMINI.md                               # [Agent 轉接檔] Gemini CLI 入口，指向 AGENTS.md (自動產生)

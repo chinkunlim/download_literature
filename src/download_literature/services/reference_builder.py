@@ -52,6 +52,7 @@ _STOPWORDS = {
 }
 _YEAR_IN_TEXT = re.compile(r"\b(19|20)\d{2}\b")
 FREE_TEXT_NOTE = "matched by title search; check the APA entry"
+LOOKUP_FAILED_NOTE = "metadata lookup failed"
 
 
 class WorkResolver(Protocol):
@@ -188,7 +189,7 @@ def _confirm(entry: ApaEntry, resolver: WorkResolver) -> tuple[WorkMeta | None, 
             return work, ""
         hits = [w for w in resolver.search(entry.raw) if _same_work(entry, w)]
     except SourceError as exc:
-        return None, f"metadata lookup failed ({exc}); using the citation as written"
+        return None, f"{LOOKUP_FAILED_NOTE} ({exc}); using the citation as written"
     if hits:
         return hits[0], ""
     if entry.kind_hint is ReferenceKind.BOOK or entry.arxiv_id or entry.urls:
@@ -346,7 +347,7 @@ def _resolve_free_text(text: str, resolver: WorkResolver, taken: set[str]) -> Re
     try:
         work = resolver.by_doi(doi) if doi else match_free_text(text, resolver.search(text))
     except SourceError as exc:
-        return Resolution(text, None, None, text, f"metadata lookup failed ({exc}); run again later")
+        return Resolution(text, None, None, text, f"{LOOKUP_FAILED_NOTE} ({exc}); run again later")
     if work is None:
         return Resolution(text, None, None, text, "not found by title search; add authors, year or a DOI")
     return _from_work(text, work, taken, "" if doi else FREE_TEXT_NOTE)

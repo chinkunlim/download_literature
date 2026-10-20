@@ -78,6 +78,8 @@ def pick_matching_results(results: list[tuple[str, str]], title: str) -> list[st
 class EbscoFetcher:
     """Downloads version-of-record PDFs through the library's EBSCO Discovery profile."""
 
+    label = "EBSCO"  # step name shown while this route runs
+
     def __init__(self, browser: BrowserPublisherFetcher, profile: str, max_records: int = 2) -> None:
         """Create the fetcher.
 

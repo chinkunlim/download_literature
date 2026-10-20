@@ -16,7 +16,7 @@
 
 ## 3. 和通用規範不同的例外（要寫理由）
 
-- （例）`legacy_parser.py` 暫時允許 900 行：正在依 TASK-012 拆分。
+- Alembic 自動產生的遷移檔（`adapters/db/migrations/versions/`）的 `upgrade()` 可以超過函式長度上限：內容由工具產生，且已 commit 的遷移檔不可修改（ARCHITECTURE_RULES §4）。
 
 ## 4. 禁止事項
 

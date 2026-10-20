@@ -9,6 +9,7 @@ Sources are passed in (dependency injection), so the same flow runs offline in t
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -170,6 +171,7 @@ class Sources:
         pdf_text: Text reader for the title check; None skips the check.
         site: Browser fetcher for listed URLs that plain HTTP cannot fetch; None skips that step.
         books: Book catalogue (latest edition, public-domain scans); None treats books as manual.
+        progress: Called with (key, step) while a reference is processed (e.g. for the web page).
     """
 
     open_access: OpenAccessFinder
@@ -179,6 +181,7 @@ class Sources:
     pdf_text: PdfTextReader | None = None
     site: PdfFetcher | None = None
     books: BookFinder | None = None
+    progress: Callable[[str, str], None] | None = None
 
 
 @dataclass
@@ -207,6 +210,15 @@ class _Attempt:
             logger.warning("needs a person key=%s site=%s (skipped)", self.reference.key, exc.site)
         else:
             logger.warning("source failed key=%s at=%s: %s", self.reference.key, where, exc)
+
+    def step(self, name: str) -> None:
+        """Report the step being tried.
+
+        Args:
+            name: Step name shown to the user (e.g. EBSCO).
+        """
+        if self.sources.progress is not None:
+            self.sources.progress(self.reference.key, name)
 
     def blocked_note(self) -> str:
         """Describe the skipped sites.
@@ -299,6 +311,7 @@ def _try_institutional(attempt: _Attempt) -> tuple[bytes, str] | None:
     if not attempt.reference.doi:
         return None
     for route in attempt.sources.publishers:
+        attempt.step(getattr(route, "label", type(route).__name__))
         try:
             got = route.fetch_pdf(attempt.reference)
         except SourceError as exc:
@@ -319,6 +332,7 @@ def _obtain(attempt: _Attempt) -> tuple[bytes, str, bool] | None:
         (PDF bytes, URL, is_version_of_record) or None.
     """
     reference, sources = attempt.reference, attempt.sources
+    attempt.step("開放取用")
     locations = _oa_locations(reference, sources.open_access)
     published = [loc.url for loc in locations if loc.published]
     got = _try_urls(attempt, published, sources.http) or _try_institutional(attempt)
@@ -326,6 +340,7 @@ def _obtain(attempt: _Attempt) -> tuple[bytes, str, bool] | None:
         return got[0], got[1], True
     secondary = list(reference.direct_urls()) + [loc.url for loc in locations if not loc.published]
     secondary = [u for u in dict.fromkeys(secondary) if u not in published]
+    attempt.step("作者稿／預印本")
     got = _try_urls(attempt, secondary, sources.http)
     if got is None and sources.site is not None:
         got = _try_urls(attempt, list(reference.pdf_urls), sources.site)
@@ -373,6 +388,7 @@ def _download_book(attempt: _Attempt) -> DownloadOutcome:
         The outcome; its detail names the latest edition when known.
     """
     reference, sources = attempt.reference, attempt.sources
+    attempt.step("書籍目錄")
     info = _book_info(reference, sources)
     edition = f"latest edition: {info.latest_edition}" if info and info.latest_edition else ""
     got = _try_urls(attempt, list(info.public_pdf_urls), sources.http) if info else None
