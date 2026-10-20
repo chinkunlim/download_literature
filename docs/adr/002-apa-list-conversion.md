@@ -5,6 +5,8 @@
 - **Agent**：`claude-code`
 - **任務**：`TASK-001`
 
+> **後續修訂**：輸入已改為 `DATA_DIR/input/references.md` 的「待處理」區（ADR-005），狀態存在 SQLite（ADR-006）；`references.txt`、舊 JSON 與「Check these citations」段落已不再使用。核對規則（本 ADR §3）仍然有效。
+
 ## 1. 背景與問題
 
 使用者拿到的文獻清單通常是 APA 格式，需要自動轉成下載用的 JSON（DOI、類型、標題），而且不能配錯論文。

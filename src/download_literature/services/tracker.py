@@ -345,10 +345,10 @@ def download_items(
                 store.update(apply_outcome(item, outcome))
                 store.set_stage(key, "")
             store.advance_job(job_id, done, key)
-    except Exception as exc:
+    except BaseException as exc:  # also Ctrl-C: the job must never stay "running" (ISSUE-005)
         for key in keys:
             store.set_stage(key, "")
-        store.finish_job(job_id, JobState.FAILED, str(exc))
+        store.finish_job(job_id, JobState.FAILED, str(exc) or type(exc).__name__)
         raise
     store.finish_job(job_id, JobState.DONE, f"{len(keys)} processed")
     return job_id

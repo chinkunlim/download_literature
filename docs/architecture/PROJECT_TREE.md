@@ -87,6 +87,9 @@ download_literature/
 │   │   ├── 001-playwright-request-blocked.md
 │   │   ├── 002-openalex-wrong-paper.md
 │   │   ├── 003-cloudflare-loop-automated-chrome.md
+│   │   ├── 004-refresh-loses-or-downgrades-pdf.md
+│   │   ├── 005-job-stuck-running-after-interrupt.md
+│   │   ├── 006-inherited-data-dir-overrides-env.md
 │   │   ├── _TEMPLATE.md                    # 已知問題範本 (tracker_cli 會套用)
 │   │   └── KNOWN_ISSUES.md                 # 已知問題總表 (🔴/🟡/🟢)
 │   ├── specs/                              # [功能規格書] PRD / API Contract
@@ -144,7 +147,6 @@ download_literature/
 │       │   ├── apa.py
 │       │   ├── apa_format.py
 │       │   ├── literature.py
-│       │   ├── models.py
 │       │   └── tracker.py
 │       ├── entrypoints/
 │       │   ├── http/
@@ -155,13 +157,11 @@ download_literature/
 │       │   │   ├── jobs.py
 │       │   │   └── schemas.py
 │       │   ├── __init__.py
-│       │   ├── cli.py
 │       │   ├── fetch_cli.py
 │       │   ├── runner.py
 │       │   └── web_cli.py
 │       ├── services/
 │       │   ├── __init__.py
-│       │   ├── greeting.py
 │       │   ├── literature.py
 │       │   ├── reference_builder.py
 │       │   └── tracker.py
@@ -179,7 +179,6 @@ download_literature/
 │   ├── test_chinese.py
 │   ├── test_db.py
 │   ├── test_free_text.py
-│   ├── test_greeting.py
 │   ├── test_literature.py
 │   ├── test_locks.py
 │   ├── test_markdown_files.py

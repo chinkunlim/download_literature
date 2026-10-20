@@ -379,11 +379,12 @@ def _join(*parts: str) -> str:
     return "; ".join(p for p in parts if p)
 
 
-def _download_book(attempt: _Attempt) -> DownloadOutcome:
+def _download_book(attempt: _Attempt, aside: Path | None) -> DownloadOutcome:
     """Obtain a book: a free scan, else an institutional e-book (when it has a DOI), else borrow.
 
     Args:
         attempt: Current attempt for a book reference.
+        aside: Previous file set aside by a refresh (restored when nothing is found), or None.
 
     Returns:
         The outcome; its detail names the latest edition when known.
@@ -396,6 +397,8 @@ def _download_book(attempt: _Attempt) -> DownloadOutcome:
     if got is None and reference.doi:
         found = _obtain(attempt)
         got = (found[0], found[1]) if found else None
+    if got is None and aside is not None:
+        return _no_pdf(attempt, aside)
     if got is None:
         status = DownloadStatus.NEEDS_REVIEW if attempt.blocked else DownloadStatus.MANUAL
         detail = _join(attempt.blocked_note(), "book: borrow from the library", edition)
@@ -433,7 +436,8 @@ def download_reference(reference: Reference, sources: Sources, refresh: bool = F
     Args:
         reference: Reference to obtain.
         sources: Download sources.
-        refresh: Look for a better copy even when a file exists (the old file is kept if none is found).
+        refresh: Look for the version of record even when a file exists; the old file is kept when only
+            an author copy (or nothing) is found.
 
     Returns:
         The outcome for this reference.
@@ -444,9 +448,9 @@ def download_reference(reference: Reference, sources: Sources, refresh: bool = F
         return DownloadOutcome(reference, DownloadStatus.ALREADY_PRESENT, path=existing)
     attempt = _Attempt(reference, sources)
     if reference.kind is ReferenceKind.BOOK:
-        return _download_book(attempt)
+        return _download_book(attempt, aside)
     got = _obtain(attempt)
-    if got is None:
+    if got is None or (aside is not None and not got[2]):  # refresh never swaps for a copy (ISSUE-004)
         return _no_pdf(attempt, aside)
     data, url, official = got
     path = sources.store.save(reference.key, data)

@@ -190,6 +190,17 @@ class BookFlowTest(unittest.TestCase):
         self.assertIn("borrow", outcome.detail)
         self.assertIn("latest edition: 2008, Harper, Rev. ed.", outcome.detail)
 
+    def test_refreshing_a_book_without_a_better_copy_keeps_its_pdf(self) -> None:
+        """--refresh on a saved book that has no free scan restores the saved PDF (never loses it)."""
+        self.store.save("Burns_1980", PDF + b"old")
+        info = BookInfo(2008, "2008, Harper, Rev. ed.", (), "https://openlibrary.org/works/W")
+        sources = Sources(NoOa(), FakeHttp({}), (), self.store, books=FakeBooks(info))
+        ref = Reference("Burns_1980", "Burns", kind=ReferenceKind.BOOK, title="Feeling good", author="Burns")
+        [outcome] = download_all([ref], sources, refresh=frozenset({"Burns_1980"}))
+        self.assertEqual(outcome.status, DownloadStatus.ALREADY_PRESENT)
+        assert outcome.path is not None
+        self.assertEqual(outcome.path.read_bytes(), PDF + b"old")
+
 
 if __name__ == "__main__":
     unittest.main()

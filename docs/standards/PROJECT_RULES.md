@@ -5,7 +5,8 @@
 
 ## 1. 領域知識與術語
 
-- 使用者的清單是 `DATA_DIR/input/references.md`（待處理區 + APA 7 表格，ADR-005），程式狀態在同名 `references.json`。PDF 存在 `DATA_DIR/output/literature/<key>.pdf`。
+- 使用者在 `DATA_DIR/input/references.md` 的「待處理」區加文獻（ADR-005），或用網頁 / `--add`；程式狀態在 SQLite `DATA_DIR/db/literature.db`（ADR-006），`references.md` 與 `output/report.md` 都由資料庫重寫。PDF 存在 `DATA_DIR/output/literature/<key>.pdf`。
+- 指令列、網頁、Open WebUI 共用 `entrypoints/runner.py`；一次只跑一個處理工作（`DATA_DIR/state/run.lock`）。
 - 東華大學（NDHU）用 OpenAthens，redirector 網域 `ndhu.edu.tw`；校內 IP（134.208.x.x）直接授權。
 
 ## 2. 本專案特有的規則

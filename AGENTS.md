@@ -1,6 +1,6 @@
 # AGENTS.md — download_literature
 
-> AI-assisted software project with standard structure and agent handoff.
+> 從 APA 文獻清單自動下載論文 PDF（開放取用、OpenAthens、EBSCO、華藝），並維護 APA 7 參考文獻清單。
 >
 > 本檔與 [`.agents/project.toml`](.agents/project.toml) 是所有 AI Agent（Claude Code、Gemini/Antigravity、Cursor、Windsurf、Copilot、Codex）的**唯一規則來源**。`CLAUDE.md`、`GEMINI.md` 等入口檔由 `python3 scripts/agentctl.py sync` 自動產生，請勿直接修改。
 

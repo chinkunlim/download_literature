@@ -388,7 +388,7 @@ def create_app(runner: Runner, jobs: JobManager, port: int) -> FastAPI:
     """
     app = FastAPI(title="文獻下載", docs_url="/docs")
     extra = {f"{h}:{port}" for h in runner.config.http_allowed_hosts}
-    hosts = {f"127.0.0.1:{port}", f"localhost:{port}", "testserver"} | extra
+    hosts = {f"127.0.0.1:{port}", f"localhost:{port}"} | extra
     app.add_middleware(
         LocalOnly, hosts=hosts, origins={f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
     )

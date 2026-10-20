@@ -5,6 +5,8 @@
 - **Agent**：`claude-code`
 - **任務**：`TASK-001`
 
+> **後續修訂**：遇到驗證時的行為已由 ADR-004 修訂（預設不等待、標「需人工處理」，`--interactive` 才等）；報告位置改為 `DATA_DIR/output/report.md`（ADR-006）；華藝路線見 ADR-007。
+
 ## 1. 背景與問題
 
 需要下載專題引用的文獻；部分在付費出版社，東華用 OpenAthens（校外）與 IP（校內）授權，出版社多有 Cloudflare 防護。

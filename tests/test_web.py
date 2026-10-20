@@ -20,6 +20,7 @@ from download_literature.entrypoints.runner import ProcessOptions, Runner, RunSu
 from download_literature.services.tracker import IdentifyResult  # noqa: E402
 
 PDF = b"%PDF-1.4\n" + b"q" * 100
+LOCAL = "http://127.0.0.1:8765"
 
 
 class WebTest(unittest.TestCase):
@@ -38,7 +39,7 @@ class WebTest(unittest.TestCase):
             return RunSummary([], IdentifyResult(1, ["Rethinking rumination"]), [], None)
 
         self.jobs = JobManager(fake_process)
-        self.client = TestClient(create_app(self.runner, self.jobs, port=8765))
+        self.client = TestClient(create_app(self.runner, self.jobs, port=8765), base_url=LOCAL)
 
     def tearDown(self) -> None:
         self.gate.set()
@@ -116,6 +117,8 @@ class WebTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 403)
         resp = self.client.get("/api/items", headers={"Host": "evil.example"})
         self.assertEqual(resp.status_code, 403)
+        resp = self.client.get("/api/items", headers={"Host": "testserver"})
+        self.assertEqual(resp.status_code, 403)
         ok = self.client.post("/api/items", json={"text": "x"}, headers={"Origin": "http://127.0.0.1:8765"})
         self.assertEqual(ok.status_code, 200)
 
@@ -133,10 +136,27 @@ class ExtraHostTest(unittest.TestCase):
                 http_allowed_hosts=("host.docker.internal",),
             )
             runner = Runner(config)
-            client = TestClient(create_app(runner, JobManager(runner.process), port=8765))
+            client = TestClient(create_app(runner, JobManager(runner.process), port=8765), base_url=LOCAL)
             ok = client.get("/api/items", headers={"Host": "host.docker.internal:8765"})
             self.assertEqual(ok.status_code, 200)
             self.assertEqual(client.get("/api/items", headers={"Host": "evil.example"}).status_code, 403)
+
+
+class StaleJobTest(unittest.TestCase):
+    """A job left running by a process that was stopped (Ctrl-C, crash)."""
+
+    def test_new_runner_closes_jobs_and_steps_left_by_a_stopped_process(self) -> None:
+        """When no job holds the run lock, a 'running' job is marked failed and item steps are cleared."""
+        with tempfile.TemporaryDirectory() as tmp:
+            config = AppConfig(app_env="test", log_to_file=False, data_dir=Path(tmp))
+            old = Runner(config)
+            old.add_entries(["Title one"])
+            job_id = old.store.start_job("download", 1)
+            old.store.set_stage("Unresolved_1", "EBSCO")
+            runner = Runner(config)
+            job = runner.store.jobs(1)[0]
+            self.assertEqual((job.id, job.state.value), (job_id, "failed"))
+            self.assertEqual(runner.store.stages(), {})
 
 
 if __name__ == "__main__":

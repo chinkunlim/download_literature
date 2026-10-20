@@ -1,7 +1,7 @@
 [project]
 name = "download-literature"
 version = "0.1.0"
-description = "AI-assisted software project with standard structure and agent handoff."
+description = "Download the PDFs of an APA reference list (open access, OpenAthens, EBSCO, Airiti) and keep an APA 7 list."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -9,13 +9,14 @@ dependencies = [
     "fastapi>=0.151.0",
     "httpx>=0.28.1",
     "playwright>=1.64.0",
+    "pydantic>=2.14.1",
     "pypdf>=6.21.1",
     "sqlalchemy>=2.1.5",
+    "starlette>=1.9.0",
     "uvicorn>=0.54.0",
 ]  # add with `uv add <package>` (never `pip install`)
 
 [project.scripts]
-download-literature = "download_literature.entrypoints.cli:main"
 fetch-literature = "download_literature.entrypoints.fetch_cli:main"
 literature-web = "download_literature.entrypoints.web_cli:main"
 

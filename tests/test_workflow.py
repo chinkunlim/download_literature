@@ -132,6 +132,24 @@ class DownloadTest(unittest.TestCase):
         job = store.jobs(1)[0]
         self.assertEqual((job.id, job.state, job.done, job.total), (job_id, JobState.DONE, 3, 3))
 
+    def test_interrupted_run_is_recorded_as_failed(self) -> None:
+        """Ctrl-C during a download ends the job as failed and clears the step (never stuck 'running')."""
+        store = _store()
+
+        class Route:
+            def fetch_pdf(self, reference: Reference) -> tuple[bytes, str] | None:
+                store.set_stage(reference.key, "EBSCO")
+                raise KeyboardInterrupt
+
+        queue_entries(store, ["a"])
+        identify_pending(store, object(), _resolve)  # type: ignore[arg-type]
+        with tempfile.TemporaryDirectory() as tmp:
+            sources = Sources(FakeFinder(), FakeHttp(), (Route(),), FilePdfStore(Path(tmp)))
+            with self.assertRaises(KeyboardInterrupt):
+                download_items(store, ["Key_a"], sources)
+        self.assertEqual(store.stages(), {})
+        self.assertEqual(store.jobs(1)[0].state, JobState.FAILED)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,8 @@
 - **Agent**：`claude-code`
 - **任務**：`TASK-001`
 
+> **後續修訂**：程式狀態由 `references.json` 改存 SQLite，`references.md` 不再有 APA 表格與「重試」欄：只保留「待處理」與「已處理」精簡清單，完整結果在 `output/report.md`；重試／刪除改用網頁或 `--retry` / `--delete`（ADR-006）。待處理區與 APA 7 產生規則仍然有效。
+
 ## 1. 背景與問題
 
 使用者希望在同一個 md 檔持續加入文獻（可只給作者與標題），執行時只處理未處理的條目，並取得完整 APA 7th 清單。

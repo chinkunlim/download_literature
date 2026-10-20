@@ -25,7 +25,7 @@ uv run literature-web
 | `uv run fetch-literature --status` | 只看目前狀態 |
 | `uv run fetch-literature --interactive` | 在電腦前時：處理「⚠️ 需人工處理」 |
 | `--retry <key>` / `--reidentify <key>` / `--delete <key>` | 重新下載／重新辨識（新 APA）／移除 |
-| `--identify-only` / `--no-browser` / `--refresh <key>` | 只辨識／只抓開放取用／嘗試換成正式版 |
+| `--identify-only` / `--no-browser` / `--refresh <key>` | 只辨識／只抓開放取用／嘗試換成正式版（只找到作者稿或找不到時保留原檔） |
 
 ### Open WebUI（Ollama）工具
 

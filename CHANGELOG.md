@@ -20,6 +20,7 @@ All notable changes to **download_literature** are documented here
 
 ### Fixed
 - fix(literature): wait for a stable page after bot checks before fetching (TASK-001) (`TASK-001`, by `@claude-code`)
+- fix(literature): keep PDFs on refresh, close interrupted jobs, remove template leftovers and update docs (by `@claude-code`)
 
 ## [0.1.0] - 2026-10-20
 ### Added

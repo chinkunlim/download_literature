@@ -34,7 +34,7 @@ from download_literature.adapters.literature.tracker_md import pending_text, ren
 from download_literature.adapters.locks import RunLock
 from download_literature.config.settings import AppConfig
 from download_literature.domain.literature import has_cjk
-from download_literature.domain.tracker import ItemStatus, TrackedItem
+from download_literature.domain.tracker import AlreadyRunningError, ItemStatus, TrackedItem
 from download_literature.services.literature import PublisherFetcher, Sources
 from download_literature.services.reference_builder import WorkResolver, resolve_entry
 from download_literature.services.tracker import (
@@ -108,6 +108,7 @@ class Runner:
         upgrade_database(config.database_url)
         self.store = SqlItemStore(create_db_engine(config.database_url))
         self._migrate_legacy_json()
+        self._close_stale_jobs()
 
     @property
     def input_md(self) -> Path:
@@ -138,6 +139,14 @@ class Runner:
         archive.mkdir(parents=True, exist_ok=True)
         shutil.move(str(legacy), archive / f"references.json.migrated-{datetime.now():%Y%m%d-%H%M%S}")
         logger.info("legacy list migrated into the database from=%s", legacy)
+
+    def _close_stale_jobs(self) -> None:
+        """Close jobs and item steps left "running" by a stopped process, unless a job is running now."""
+        try:
+            with RunLock(self.config.state_dir / "run.lock"):
+                self.store.close_stale("stopped before finishing")
+        except AlreadyRunningError:
+            logger.info("a job is running; stale-job check skipped")
 
     def add_entries(self, lines: list[str]) -> list[str]:
         """Queue new entries (identified when the list is processed).

@@ -2,14 +2,19 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "download-literature: CLI",
+      "name": "literature-web",
       "type": "debugpy",
       "request": "launch",
-      "module": "download_literature.entrypoints.cli",
-      "args": [
-        "--name",
-        "Debug"
-      ],
+      "module": "download_literature.entrypoints.web_cli",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "fetch-literature --status",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "download_literature.entrypoints.fetch_cli",
+      "args": ["--status"],
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"
     }

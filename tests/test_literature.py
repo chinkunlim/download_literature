@@ -408,6 +408,16 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(outcome.path.read_bytes(), PDF + b"old")
         self.assertIn("kept the previous copy", outcome.detail)
 
+    def test_refresh_never_replaces_a_file_with_an_author_copy(self) -> None:
+        """--refresh looks for the official version only; an author copy keeps the previous file."""
+        self.store.save("A", PDF + b"old")
+        http = FakeHttp({"https://lab/a.pdf": PDF})
+        sources = self._sources(http, FakeFinder({}, {"10.1/a": ["https://lab/a.pdf"]}))
+        [outcome] = download_all([Reference("A", "A", doi="10.1/a")], sources, refresh=frozenset({"A"}))
+        self.assertEqual(outcome.status, DownloadStatus.ALREADY_PRESENT)
+        assert outcome.path is not None
+        self.assertEqual(outcome.path.read_bytes(), PDF + b"old")
+
     def test_blocked_route_becomes_needs_review(self) -> None:
         """A route that needs a person (bot check) ends as needs_review naming the site."""
 

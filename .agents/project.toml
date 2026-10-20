@@ -4,7 +4,7 @@
 
 [project]
 name = "download_literature"
-description = "AI-assisted software project with standard structure and agent handoff."
+description = "Download the PDFs of an APA reference list (open access, OpenAthens, EBSCO, Airiti) and keep an APA 7 list."
 stack = "python"
 addons = []
 languages = ["python"]

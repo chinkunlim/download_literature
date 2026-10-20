@@ -269,6 +269,29 @@ class SqlItemStore:
             values = {"state": state.value, "message": message, "finished_at": _now()}
             s.execute(update(JobRow).where(JobRow.id == job_id).values(**values))
 
+    def close_stale(self, message: str) -> int:
+        """Mark jobs left "running" by a stopped process as failed and clear every item's step.
+
+        Only call this while holding the run lock (no job can be running then).
+
+        Args:
+            message: Text recorded on the closed jobs.
+
+        Returns:
+            Number of jobs closed.
+        """
+        with session_scope(self._factory) as s:
+            s.execute(update(ItemRow).where(ItemRow.stage != "").values(stage=""))
+            result = s.execute(
+                update(JobRow)
+                .where(JobRow.state == JobState.RUNNING.value)
+                .values(state=JobState.FAILED.value, message=message, finished_at=_now())
+            )
+            closed = int(getattr(result, "rowcount", 0))
+        if closed:
+            logger.warning("closed stale jobs count=%d", closed)
+        return closed
+
     def jobs(self, limit: int = 10) -> list[Job]:
         """Return recent jobs, newest first.
 
