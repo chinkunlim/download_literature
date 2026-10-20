@@ -1,21 +1,28 @@
 {
   "id": "TASK-001",
   "title": "Literature downloader with OpenAthens and download project references",
-  "status": "in_progress",
+  "status": "done",
   "agent": "claude-code",
   "handed_off_from": "",
   "handed_off_to": "",
   "paths": [],
-  "done_items": "",
+  "done_items": "Literature downloader complete: APA/title/DOI input (EN+ZH), Crossref/OpenAlex/Airiti identification, VoR-first download (OA, Airiti, EBSCO, OpenAthens), SQLite store, CLI + local web app + Open WebUI tool. Full review fixed refresh data loss (ISSUE-004), stuck jobs (ISSUE-005), DATA_DIR override (ISSUE-006, mitigated).",
   "todo_items": "",
   "blockers": "",
   "created_at": "2026-10-20 06:09 UTC",
-  "updated_at": "2026-10-20 06:09 UTC",
+  "updated_at": "2026-10-20 13:06 UTC",
   "history": [
     {
       "timestamp": "2026-10-20 06:09 UTC",
       "action": "created_and_claimed",
       "agent": "claude-code"
+    },
+    {
+      "timestamp": "2026-10-20 13:06 UTC",
+      "action": "done",
+      "agent": "claude-code",
+      "summary": "Literature downloader complete: APA/title/DOI input (EN+ZH), Crossref/OpenAlex/Airiti identification, VoR-first download (OA, Airiti, EBSCO, OpenAthens), SQLite store, CLI + local web app + Open WebUI tool. Full review fixed refresh data loss (ISSUE-004), stuck jobs (ISSUE-005), DATA_DIR override (ISSUE-006, mitigated)."
     }
-  ]
+  ],
+  "summary": "Literature downloader complete: APA/title/DOI input (EN+ZH), Crossref/OpenAlex/Airiti identification, VoR-first download (OA, Airiti, EBSCO, OpenAthens), SQLite store, CLI + local web app + Open WebUI tool. Full review fixed refresh data loss (ISSUE-004), stuck jobs (ISSUE-005), DATA_DIR override (ISSUE-006, mitigated)."
 }
