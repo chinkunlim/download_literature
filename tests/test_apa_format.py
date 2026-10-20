@@ -45,6 +45,11 @@ class AuthorsTest(unittest.TestCase):
         )
         self.assertEqual(format_authors((("World Health Organization", ""),)), "World Health Organization")
 
+    def test_all_caps_family_names_are_fixed(self) -> None:
+        """Surnames stored in capitals (e.g. 'NEFF') are written normally; group names are kept."""
+        self.assertEqual(format_authors((("NEFF", "Kristin"),)), "Neff, K.")
+        self.assertEqual(format_authors((("WHO", ""),)), "WHO")
+
     def test_more_than_twenty_authors(self) -> None:
         """21+ authors: first 19, an ellipsis, then the last author."""
         authors = tuple((f"Name{i}", "A.") for i in range(1, 23))
@@ -222,6 +227,32 @@ class MetadataParseTest(unittest.TestCase):
             (work.container, work.volume, work.article_number), ("Frontiers in Psychiatry", "7", "215")
         )
         self.assertEqual(work.genre, "journal-article")
+
+    def test_crossref_prefers_print_year(self) -> None:
+        """Online-first articles use the year of the printed issue, as cited."""
+        item = {
+            "DOI": "10.1/x",
+            "type": "journal-article",
+            "title": ["T"],
+            "issued": {"date-parts": [[2021, 6]]},
+            "published-print": {"date-parts": [[2022, 2]]},
+        }
+        work = parse_crossref_work(item)
+        assert work is not None
+        self.assertEqual(work.year, 2022)
+
+    def test_crossref_uses_journal_issue_date(self) -> None:
+        """The issue date (journal-issue) wins over the online-first date."""
+        item = {
+            "DOI": "10.1/y",
+            "type": "journal-article",
+            "title": ["T"],
+            "issued": {"date-parts": [[2021, 12]]},
+            "journal-issue": {"issue": "2", "published-online": {"date-parts": [[2022, 2]]}},
+        }
+        work = parse_crossref_work(item)
+        assert work is not None
+        self.assertEqual(work.year, 2022)
 
     def test_openalex_preprint(self) -> None:
         """An OpenAlex arXiv record becomes a preprint with split author names."""

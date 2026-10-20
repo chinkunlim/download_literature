@@ -32,6 +32,7 @@ class ApaEntry:
 
     Attributes:
         raw: The reference text after Markdown clean-up.
+        authors_text: The author part as written (before the date).
         first_author: Family name of the first author (or the group author).
         year: Publication year; None for `n.d.` / `in press`.
         title: Work title without trailing period or bracketed description.
@@ -39,9 +40,11 @@ class ApaEntry:
         arxiv_id: arXiv identifier without version; empty when none.
         urls: Other URLs in the entry (not doi.org / arxiv.org).
         kind_hint: Article, chapter or book, guessed from the text after the title.
+        source_text: The source part as written (journal / publisher), URLs removed.
     """
 
     raw: str
+    authors_text: str
     first_author: str
     year: int | None
     title: str
@@ -49,6 +52,7 @@ class ApaEntry:
     arxiv_id: str
     urls: tuple[str, ...]
     kind_hint: ReferenceKind
+    source_text: str = ""
 
 
 def _clean_line(line: str) -> str:
@@ -191,6 +195,7 @@ def parse_apa(text: str) -> ApaEntry:
     title = re.sub(r"\s*\[[^\]]*\]\s*$", "", title).strip()
     return ApaEntry(
         raw=raw,
+        authors_text=authors,
         first_author=authors.split(",")[0].strip().rstrip("."),
         year=int(date.group(1)) if date.group(1) else None,
         title=title,
@@ -198,4 +203,5 @@ def parse_apa(text: str) -> ApaEntry:
         arxiv_id=arxiv.group(1) if arxiv else "",
         urls=other_urls,
         kind_hint=_kind_hint(remainder, bool(doi or arxiv)),
+        source_text=re.sub(r"\s+", " ", remainder).strip(),
     )

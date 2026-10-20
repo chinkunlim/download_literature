@@ -10,13 +10,12 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Protocol
 
 from download_literature.domain.apa import ApaEntry, find_doi, parse_apa
-from download_literature.domain.apa_format import format_apa
+from download_literature.domain.apa_format import format_apa, format_entry
 from download_literature.domain.literature import (
-    ConversionNote,
     Reference,
     ReferenceKind,
     SourceError,
@@ -370,81 +369,5 @@ def resolve_entry(text: str, resolver: WorkResolver, taken: set[str]) -> Resolut
         return _resolve_free_text(text, resolver, taken)
     work, note = _confirm(entry, resolver)
     ref = _to_reference(entry, work, taken)
-    apa = format_apa(work, title=entry.title) if work else entry.raw
+    apa = format_apa(work, title=entry.title) if work else format_entry(entry)
     return Resolution(entry.raw, ref, work, apa, note)
-
-
-def build_references(
-    entries: list[str], resolver: WorkResolver
-) -> tuple[list[Reference], list[ConversionNote]]:
-    """Convert input lines into references, confirming each one on the metadata service.
-
-    Args:
-        entries: Lines from `domain.apa.split_entries` (APA references or titles).
-        resolver: Metadata service (e.g. Crossref + OpenAlex).
-
-    Returns:
-        (references in list order, notes for entries that need a human look).
-    """
-    refs: list[Reference] = []
-    notes: list[ConversionNote] = []
-    taken: set[str] = set()
-    for text in entries:
-        res = resolve_entry(text, resolver, taken)
-        if res.reference is not None:
-            refs.append(res.reference)
-        if res.note:
-            notes.append(ConversionNote(res.input, res.note))
-    logger.info("converted references count=%d notes=%d", len(refs), len(notes))
-    return refs, notes
-
-
-def _identity(ref: Reference) -> list[str]:
-    """Return the ids used to recognise the same work across conversions.
-
-    Args:
-        ref: Reference.
-
-    Returns:
-        Lower-case DOI (if any) and normalised title (if any).
-    """
-    ids = [f"doi:{ref.doi.lower()}"] if ref.doi else []
-    words = re.findall(r"[a-z0-9]+", ref.title.lower())
-    return ids + ([f"title:{' '.join(words)}"] if words else [])
-
-
-def merge_with_existing(new: list[Reference], old: list[Reference]) -> list[Reference]:
-    """Keep keys and manual edits from a previous conversion of the same list.
-
-    The new list decides which works are included and their order. For a work already in the old
-    list (same DOI or title) the old key, kind, title and extra URLs are kept, so downloaded files
-    and hand-made fixes survive.
-
-    Args:
-        new: Freshly converted references.
-        old: References from the existing JSON file.
-
-    Returns:
-        Merged references with unique keys.
-    """
-    index = {ident: ref for ref in old for ident in _identity(ref)}
-    merged: list[Reference] = []
-    used: set[str] = set()
-    for ref in new:
-        prev = next((index[i] for i in _identity(ref) if i in index), None)
-        if prev is not None and prev.key not in used:
-            urls = tuple(dict.fromkeys(prev.pdf_urls + ref.pdf_urls))
-            ref = replace(
-                ref,
-                key=prev.key,
-                kind=prev.kind,
-                title=prev.title or ref.title,
-                pdf_urls=urls,
-                doi=ref.doi or prev.doi,
-                arxiv_id=ref.arxiv_id or prev.arxiv_id,
-            )
-        if ref.key in used:
-            ref = replace(ref, key=make_key(ref.key, None, "", used))
-        used.add(ref.key)
-        merged.append(ref)
-    return merged

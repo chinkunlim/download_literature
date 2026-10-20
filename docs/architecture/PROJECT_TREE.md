@@ -73,6 +73,8 @@ download_literature/
 │   │   ├── 001-literature-download-strategy.md
 │   │   ├── 002-apa-list-conversion.md
 │   │   ├── 003-version-of-record-first.md
+│   │   ├── 004-unattended-mode-and-books.md
+│   │   ├── 005-markdown-reference-list.md
 │   │   ├── _TEMPLATE.md                    # ADR 範本 (tracker_cli 會套用)
 │   │   └── DECISIONS.md                    # 架構決策總表
 │   ├── architecture/                       # [系統架構與資料模型]
@@ -111,7 +113,8 @@ download_literature/
 │       │   │   ├── metadata.py
 │       │   │   ├── openalex.py
 │       │   │   ├── openlibrary.py
-│       │   │   └── pdf_text.py
+│       │   │   ├── pdf_text.py
+│       │   │   └── tracker_md.py
 │       │   └── __init__.py
 │       ├── config/
 │       │   ├── __init__.py
@@ -122,7 +125,8 @@ download_literature/
 │       │   ├── apa.py
 │       │   ├── apa_format.py
 │       │   ├── literature.py
-│       │   └── models.py
+│       │   ├── models.py
+│       │   └── tracker.py
 │       ├── entrypoints/
 │       │   ├── __init__.py
 │       │   ├── cli.py
@@ -131,7 +135,8 @@ download_literature/
 │       │   ├── __init__.py
 │       │   ├── greeting.py
 │       │   ├── literature.py
-│       │   └── reference_builder.py
+│       │   ├── reference_builder.py
+│       │   └── tracker.py
 │       └── __init__.py
 ├── tests/                                  # 【測試層】單元與整合測試
 │   ├── fixtures/
@@ -144,7 +149,8 @@ download_literature/
 │   ├── test_books.py
 │   ├── test_free_text.py
 │   ├── test_greeting.py
-│   └── test_literature.py
+│   ├── test_literature.py
+│   └── test_tracker.py
 ├── .editorconfig
 ├── .env.example                            # [設定範本] 環境變數清單與預設值說明
 ├── .gitignore                              # [版控排除] 排除依賴、機密 .env、憑證與執行期快取

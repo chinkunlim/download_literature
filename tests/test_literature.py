@@ -21,7 +21,7 @@ from download_literature.adapters.literature.ebsco import (  # noqa: E402
     ebsco_viewer_url,
     pick_matching_results,
 )
-from download_literature.adapters.literature.files import FilePdfStore, load_references  # noqa: E402
+from download_literature.adapters.literature.files import FilePdfStore, load_items  # noqa: E402
 from download_literature.adapters.literature.http_pdf import parse_citation_pdf_url  # noqa: E402
 from download_literature.adapters.literature.openalex import parse_openalex_locations  # noqa: E402
 from download_literature.config.settings import AppConfig  # noqa: E402
@@ -36,7 +36,7 @@ from download_literature.domain.literature import (  # noqa: E402
     safe_filename,
     title_matches,
 )
-from download_literature.services.literature import Sources, download_all, render_report  # noqa: E402
+from download_literature.services.literature import Sources, download_all  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 PDF = b"%PDF-1.7\n" + b"x" * 2000
@@ -229,8 +229,8 @@ class EbscoHelpersTest(unittest.TestCase):
 class FilesTest(unittest.TestCase):
     """Reference file loading and PDF storage."""
 
-    def test_load_references_reads_kinds_and_defaults(self) -> None:
-        """Entries are parsed into Reference objects; missing fields get defaults."""
+    def test_old_reference_list_is_migrated_to_pending_items(self) -> None:
+        """An old references.json (no status) loads as pending items with defaults filled in."""
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "refs.json"
             path.write_text(
@@ -248,7 +248,9 @@ class FilesTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            refs = load_references(path)
+            items = load_items(path)
+        refs = [i.reference for i in items if i.reference is not None]
+        self.assertEqual({i.status.value for i in items}, {"pending"})
         self.assertEqual(refs[0].doi, "10.1/a")
         self.assertEqual(refs[0].title, "T")
         self.assertEqual(refs[0].kind, ReferenceKind.ARTICLE)
@@ -442,21 +444,6 @@ class ServiceTest(unittest.TestCase):
         )
         self.assertEqual(outcome.status, DownloadStatus.FAILED)
         self.assertIsNone(outcome.path)
-
-    def test_report_lists_every_reference(self) -> None:
-        """The Markdown report has one row per reference and a summary line."""
-        outcomes = download_all(
-            [
-                Reference("Beck_1976", "Beck (1976)", kind=ReferenceKind.BOOK),
-                Reference("A", "A (2020)", doi="10.1/a"),
-            ],
-            self._sources(FakeHttp({}), FakeFinder({})),
-        )
-        report = render_report(outcomes)
-        self.assertIn("Beck (1976)", report)
-        self.assertIn("A (2020)", report)
-        self.assertIn("manual: 1", report)
-        self.assertIn("failed: 1", report)
 
 
 class ConfigTest(unittest.TestCase):

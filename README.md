@@ -4,26 +4,29 @@
 
 ## 使用方式
 
-1. 把 APA 格式的參考文獻清單存成 `DATA_DIR/input/references.txt`（或 `.md`），一筆一段；可以直接從 Word 或 Markdown 貼上。
+1. 打開 `DATA_DIR/input/references.md`（第一次執行會自動建立），在「待處理」每行寫一筆文獻。可以是完整 APA、作者＋標題、只有標題，或 DOI。
 2. 執行：
 
 ```bash
 uv run fetch-literature
 ```
 
-3. 結果在 `DATA_DIR/output/literature/`：每篇 `<key>.pdf`，以及 `report.md`（每篇狀態、來源，以及「Check these citations」需要人工確認的引文）。
+3. 程式會辨識新文獻、產生 APA 7th、下載 PDF，並把結果寫回同一個 md 檔的表格（狀態、檔案連結、備註）。PDF 在 `DATA_DIR/output/literature/`。
 
 | 指令 | 用途 |
 |---|---|
-| `uv run fetch-literature --convert-only` | 只把 APA 轉成 `references.json`，先檢查再下載 |
+| `uv run fetch-literature --interactive` | 在電腦前時用：處理「⚠️ 需人工處理」的條目，遇到驗證會等你在 Chrome 完成 |
+| `uv run fetch-literature --identify-only` | 只辨識新文獻、產生 APA，不下載 |
 | `uv run fetch-literature --no-browser` | 只抓開放取用版本，不開 Chrome |
-| `uv run fetch-literature --only <key>,<key>` | 只處理指定的文獻（key 見 `references.json`） |
-| `uv run fetch-literature --input <檔案>` | 用其他清單（`.txt` / `.md` / `.json`） |
+| `uv run fetch-literature --refresh <key>` | 嘗試把作者稿／預印本換成正式版（找不到會保留原檔） |
+| `uv run fetch-literature --only <key>,<key>` | 只處理指定條目 |
 
 說明：
-- 轉換後的 `references.json` 可以手動修改（例如加 `pdf_urls` 放作者網站的 PDF、改 `kind`）；重跑時會保留這些修改與已下載的檔案。
-- 校外使用時，`.env` 的 `USER_EMAIL` / `USER_PASSWORD` 只會填在 OpenAthens 登入頁。遇到 Cloudflare / CAPTCHA 驗證，程式會停下來等你在 Chrome 視窗完成；一直重複驗證的網站請改用自己的瀏覽器手動下載，存成 `<key>.pdf` 放進輸出資料夾。
-- 專書不會自動下載；學校沒訂閱的期刊會列為 failed，可以找作者／大學網站的版本加進 `pdf_urls`。
+- 只處理新加入的文獻，以及狀態欄改成「重試」的列；刪除表格的整列就是從清單移除。
+- 下載順序：正式版優先（出版社的免費正式版 → EBSCO → 出版社網站 → 作者稿／預印本）；每篇都核對 PDF 標題。
+- 預設不等人工：遇到機器人驗證會標「⚠️ 需人工處理」並繼續，等你在電腦前再用 `--interactive`。程式不會自動點驗證。
+- 書籍：公版書會從 Internet Archive 下載；有版權的書標「📕 需借閱」，並列出最新版本資訊。
+- 校外使用時，`.env` 的 `USER_EMAIL` / `USER_PASSWORD` 只會填在 OpenAthens 登入頁。
 
 ## 第一次在這台電腦使用
 

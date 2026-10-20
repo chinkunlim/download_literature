@@ -1,24 +1,25 @@
-"""Command-line entrypoint: APA reference list → verified JSON → PDFs → report, in one command.
+"""Command-line entrypoint: the Markdown reference list in, PDFs and an updated list out (ADR-005).
 
 Usage:
-    uv run fetch-literature                     # uses DATA_DIR/input/references.txt (or .md / .json)
-    uv run fetch-literature --input my_list.txt # any APA list (.txt / .md) or converted .json
-    uv run fetch-literature --convert-only      # only APA → references.json, no download
-    uv run fetch-literature --no-browser        # open access only (no Chrome, no sign-in)
-    uv run fetch-literature --only Gross_1998_EmergingField
-    uv run fetch-literature --refresh Schleider_2022_NHB  # replace an author / preprint copy if possible
+    uv run fetch-literature                 # process new / retry entries of DATA_DIR/input/references.md
+    uv run fetch-literature --interactive   # at the computer: also handle ⚠️ items (bot checks, sign-ins)
+    uv run fetch-literature --identify-only # only identify new entries and write APA 7, no download
+    uv run fetch-literature --no-browser    # open access only (no Chrome)
+    uv run fetch-literature --refresh Gross_1998_RGP   # try to replace an author / preprint copy
+    uv run fetch-literature --only Webb_2012_PsychBull # limit this run to some keys
 
-Steps: an APA list is split, parsed and confirmed on Crossref, then written to `<list>.json` (keys,
-extra URLs and kinds from an earlier run are kept). Every reference is then downloaded, version of
-record first: published open-access copies, EBSCO, the publisher through Chrome / OpenAthens, and only
-then preprints / author copies (flagged in the report). PDFs and `report.md` go to
-`DATA_DIR/output/literature/`.
+Steps: read the list → apply the user's edits (deleted rows, '重試') → identify new lines (Crossref,
+OpenAlex) and write APA 7 → download the selected items (version of record first; steps that need a
+person are skipped unless --interactive) → write the status, file and notes back into the list.
+State lives next to the list in `references.json`; PDFs go to `DATA_DIR/output/literature/`.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
+from collections import Counter
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -27,21 +28,29 @@ import httpx
 from download_literature.adapters.literature.browser import BrowserPublisherFetcher
 from download_literature.adapters.literature.crossref import CrossrefResolver
 from download_literature.adapters.literature.ebsco import EbscoFetcher
-from download_literature.adapters.literature.files import (
-    FilePdfStore,
-    find_reference_list,
-    load_references,
-    save_references,
-)
+from download_literature.adapters.literature.files import FilePdfStore, load_items, save_items
 from download_literature.adapters.literature.http_pdf import HttpPdfFetcher
-from download_literature.adapters.literature.openalex import OpenAlexFinder
+from download_literature.adapters.literature.metadata import CombinedResolver
+from download_literature.adapters.literature.openalex import OpenAlexFinder, OpenAlexResolver
+from download_literature.adapters.literature.openlibrary import OpenLibraryBooks
 from download_literature.adapters.literature.pdf_text import PypdfTextReader
+from download_literature.adapters.literature.tracker_md import (
+    STATUS_LABELS,
+    parse_tracker_md,
+    render_tracker_md,
+)
 from download_literature.config.logging_setup import setup_logging
 from download_literature.config.settings import AppConfig, load_config
-from download_literature.domain.apa import split_entries
-from download_literature.domain.literature import ConversionNote, DownloadStatus, Reference
-from download_literature.services.literature import PublisherFetcher, Sources, download_all, render_report
-from download_literature.services.reference_builder import build_references, merge_with_existing
+from download_literature.domain.tracker import ItemStatus, TrackedItem
+from download_literature.services.literature import PublisherFetcher, Sources, download_all
+from download_literature.services.reference_builder import resolve_entry
+from download_literature.services.tracker import (
+    add_new_entries,
+    apply_md_edits,
+    apply_outcomes,
+    refresh_identification,
+    select_items,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,28 +66,18 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     Returns:
         Parsed options.
     """
-    parser = argparse.ArgumentParser(description="Convert an APA reference list and download the PDFs")
+    parser = argparse.ArgumentParser(description="Process the Markdown reference list and download the PDFs")
     parser.add_argument(
-        "--input",
-        "--refs",
-        type=Path,
-        default=None,
-        help="APA list (.txt/.md) or converted .json (default: DATA_DIR/input/references.txt|.md|.json)",
+        "--input", type=Path, default=None, help="list file (default: DATA_DIR/input/references.md)"
     )
-    parser.add_argument("--convert-only", action="store_true", help="only convert the APA list to JSON")
+    parser.add_argument("--identify-only", action="store_true", help="identify new entries, no download")
+    parser.add_argument("--no-browser", action="store_true", help="open access only; no Chrome")
+    parser.add_argument("--only", default="", help="comma-separated keys to process in this run")
     parser.add_argument(
-        "--no-browser", action="store_true", help="open access only; skip the publisher route"
-    )
-    parser.add_argument("--only", default="", help="comma-separated reference keys to process")
-    parser.add_argument(
-        "--refresh",
-        default="",
-        help="comma-separated keys (or 'all') whose PDFs are replaced if a better copy is found",
+        "--refresh", default="", help="comma-separated keys whose PDF should be replaced if better"
     )
     parser.add_argument(
-        "--interactive",
-        action="store_true",
-        help="you are at the computer: wait for bot checks / sign-ins and retry items that need review",
+        "--interactive", action="store_true", help="wait for bot checks / sign-ins; retry ⚠️ items"
     )
     parser.add_argument(
         "--wait", type=int, default=300, help="seconds to wait per check in --interactive mode"
@@ -86,52 +85,43 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _select(refs: list[Reference], only: str) -> list[Reference]:
-    """Keep only the requested keys.
+def _keys(value: str) -> set[str]:
+    """Split a comma-separated key option.
 
     Args:
-        refs: All references.
-        only: Comma-separated keys; empty keeps everything.
+        value: Option text.
 
     Returns:
-        The selected references.
+        Keys.
     """
-    keys = {k.strip() for k in only.split(",") if k.strip()}
-    return [r for r in refs if not keys or r.key in keys]
+    return {k.strip() for k in value.split(",") if k.strip()}
 
 
-def _load_list(path: Path, client: httpx.Client) -> tuple[list[Reference], list[ConversionNote]]:
-    """Load a reference list, converting an APA text list to JSON first.
+def _to_process(items: list[TrackedItem], args: argparse.Namespace) -> list[TrackedItem]:
+    """Choose this run's items: pending (+ ⚠️ when interactive) and --refresh keys, limited by --only.
 
     Args:
-        path: `.txt` / `.md` APA list or `.json` reference file.
-        client: HTTP client for Crossref.
+        items: All items.
+        args: Parsed options.
 
     Returns:
-        (references, conversion notes); notes are empty for a JSON input.
+        Items to download.
     """
-    if path.suffix.lower() == ".json":
-        return load_references(path), []
-    entries = split_entries(path.read_text(encoding="utf-8"))
-    refs, notes = build_references(entries, CrossrefResolver(client))
-    json_path = path.with_suffix(".json")
-    if json_path.is_file():
-        refs = merge_with_existing(refs, load_references(json_path))
-    save_references(json_path, refs)
-    logger.info("apa list converted entries=%d refs=%d json=%s", len(entries), len(refs), json_path)
-    return refs, notes
+    chosen = {i.key for i in select_items(items, args.interactive)} | _keys(args.refresh)
+    only = _keys(args.only)
+    return [i for i in items if i.key in chosen and i.reference is not None and (not only or i.key in only)]
 
 
 def _build_sources(
     stack: ExitStack, client: httpx.Client, config: AppConfig, args: argparse.Namespace
 ) -> Sources:
-    """Create the OA finder, HTTP fetcher, institutional routes (EBSCO, publisher), site fetcher and store.
+    """Create the download sources: open access, EBSCO and publisher (Chrome), books and the PDF store.
 
     Args:
         stack: Exit stack that closes the browser when the batch ends.
         client: Shared HTTP client.
         config: Settings (paths, OpenAthens domain, EBSCO profile, credentials).
-        args: Parsed options (`no_browser`, `wait`).
+        args: Parsed options (`no_browser`, `interactive`, `wait`).
 
     Returns:
         The wired download sources.
@@ -146,71 +136,84 @@ def _build_sources(
         ebsco = (EbscoFetcher(browser, config.ebsco_profile),) if config.ebsco_profile else ()
         routes = (*ebsco, browser)  # EBSCO first: version of record with fewer bot checks (ADR-003)
     store = FilePdfStore(config.literature_dir)
-    return Sources(OpenAlexFinder(client), HttpPdfFetcher(client), routes, store, PypdfTextReader(), browser)
+    return Sources(
+        OpenAlexFinder(client),
+        HttpPdfFetcher(client),
+        routes,
+        store,
+        PypdfTextReader(),
+        browser,
+        OpenLibraryBooks(client),
+    )
 
 
-def _refresh_keys(refs: list[Reference], value: str) -> frozenset[str]:
-    """Resolve the --refresh option.
-
-    Args:
-        refs: References being processed.
-        value: Comma-separated keys, or `all`.
-
-    Returns:
-        Keys to refresh.
-    """
-    if value.strip().lower() == "all":
-        return frozenset(r.key for r in refs)
-    return frozenset(k.strip() for k in value.split(",") if k.strip())
-
-
-def _print_conversion(path: Path, refs: list[Reference], notes: list[ConversionNote]) -> None:
-    """Print the result of a convert-only run.
+def _write_list(md_path: Path, items: list[TrackedItem], config: AppConfig) -> None:
+    """Save the state JSON and rewrite the Markdown list.
 
     Args:
-        path: Input list.
-        refs: Converted references.
-        notes: Conversion notes.
+        md_path: Markdown list path.
+        items: All items.
+        config: Settings (PDF folder for file links).
     """
-    print(f"Converted {len(refs)} references -> {path.with_suffix('.json')}")
-    for note in notes:
-        print(f"- {note.message}: {note.citation}")
+    save_items(md_path.with_suffix(".json"), items)
+    file_base = os.path.relpath(config.literature_dir, md_path.parent)
+    md_path.write_text(render_tracker_md(items, file_base), encoding="utf-8")
+
+
+def _print_summary(md_path: Path, items: list[TrackedItem], processed: int, skipped: list[str]) -> None:
+    """Print what the run did.
+
+    Args:
+        md_path: Markdown list path.
+        items: All items after the run.
+        processed: Number of items downloaded this run.
+        skipped: New lines skipped because they were already listed.
+    """
+    counts = Counter(i.status for i in items)
+    print(f"清單：{md_path}（共 {len(items)} 筆，本次處理 {processed} 筆）")
+    for status in ItemStatus:
+        if counts[status]:
+            print(f"  {STATUS_LABELS[status]}：{counts[status]}")
+    for line in skipped:
+        print(f"  已在清單中，略過：{line}")
+    if counts[ItemStatus.NEEDS_REVIEW]:
+        print("  在電腦前時執行：uv run fetch-literature --interactive")
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Convert the reference list, download every reference and print the report.
+    """Process the reference list once.
 
     Args:
         argv: Command-line arguments; defaults to `sys.argv[1:]`.
 
     Returns:
-        0 when nothing failed, 1 when at least one reference failed, 2 when no list was found.
+        0 (problems are recorded per item in the list).
     """
     config = load_config()
     args = _parse_args(argv)
     setup_logging(config.log_level, config.logs_dir if config.log_to_file else None)
-    path = args.input or find_reference_list(config.input_dir)
-    if path is None or not path.is_file():
-        print(f"No reference list found. Put references.txt (APA) in {config.input_dir} or use --input.")
-        return 2
-    logger.info("fetch start input=%s browser=%s", path, not args.no_browser)
+    md_path: Path = args.input or config.input_dir / "references.md"
+    edits = parse_tracker_md(md_path.read_text(encoding="utf-8") if md_path.is_file() else "")
+    items = apply_md_edits(load_items(md_path.with_suffix(".json")), edits.rows)
+    logger.info("list start file=%s items=%d new=%d", md_path, len(items), len(edits.pending))
     with ExitStack() as stack:
         client = stack.enter_context(
             httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=60)
         )
-        refs, notes = _load_list(path, client)
-        if args.convert_only:
-            _print_conversion(path, refs, notes)
-            return 0
-        selected = _select(refs, args.only)
-        sources = _build_sources(stack, client, config, args)
-        outcomes = download_all(selected, sources, _refresh_keys(selected, args.refresh))
-    report = render_report(outcomes, notes)
-    config.literature_dir.mkdir(parents=True, exist_ok=True)
-    (config.literature_dir / "report.md").write_text(report, encoding="utf-8")
-    print(report)  # the CLI's real output; logs go to stderr / files
-    print(f"PDF folder: {config.literature_dir}")
-    return 1 if any(o.status is DownloadStatus.FAILED for o in outcomes) else 0
+        resolver = CombinedResolver([CrossrefResolver(client), OpenAlexResolver(client)])
+        items = refresh_identification(items, resolver, resolve_entry)
+        items, skipped = add_new_entries(items, edits.pending, resolver, resolve_entry)
+        _write_list(md_path, items, config)  # new entries are saved even if the download is interrupted
+        todo = [] if args.identify_only else _to_process(items, args)
+        if todo:
+            refs = [i.reference for i in todo if i.reference is not None]
+            outcomes = download_all(
+                refs, _build_sources(stack, client, config, args), frozenset(_keys(args.refresh))
+            )
+            items = apply_outcomes(items, outcomes)
+    _write_list(md_path, items, config)
+    _print_summary(md_path, items, len(todo), skipped)
+    return 0
 
 
 if __name__ == "__main__":

@@ -7,44 +7,9 @@ import logging
 from pathlib import Path
 
 from download_literature.domain.literature import Reference, ReferenceKind, safe_filename
+from download_literature.domain.tracker import ItemStatus, TrackedItem
 
 logger = logging.getLogger(__name__)
-
-
-def load_references(path: Path) -> list[Reference]:
-    """Read a JSON list of references.
-
-    Each item needs `key` and `citation`; optional `doi`, `kind` (article / chapter / book),
-    `arxiv_id`, `pdf_urls` (list) and `title` (enables the wrong-paper check).
-
-    Args:
-        path: JSON file, usually in `DATA_DIR/input/`.
-
-    Returns:
-        References in file order.
-
-    Raises:
-        ValueError: When an item lacks `key` / `citation`, keys repeat, or `kind` is unknown.
-    """
-    items = json.loads(path.read_text(encoding="utf-8"))
-    refs = [
-        Reference(
-            key=item["key"],
-            citation=item["citation"],
-            doi=item.get("doi", ""),
-            kind=ReferenceKind(item.get("kind", "article")),
-            arxiv_id=item.get("arxiv_id", ""),
-            pdf_urls=tuple(item.get("pdf_urls", [])),
-            title=item.get("title", ""),
-            author=item.get("author", ""),
-        )
-        for item in items
-    ]
-    keys = [ref.key for ref in refs]
-    if len(set(keys)) != len(keys):
-        raise ValueError("duplicate reference keys in " + path.name)
-    logger.info("loaded references file=%s count=%d", path.name, len(refs))
-    return refs
 
 
 class FilePdfStore:
@@ -130,45 +95,109 @@ class FilePdfStore:
         return path
 
 
-def save_references(path: Path, refs: list[Reference]) -> None:
-    """Write references as a JSON list readable by `load_references` (empty fields omitted).
+def _ref_to_dict(ref: Reference) -> dict[str, object]:
+    """Serialise a reference (empty fields omitted).
 
     Args:
-        path: Target JSON file; parent folders are created.
-        refs: References to write.
-    """
-    items = []
-    for ref in refs:
-        item: dict[str, object] = {
-            "key": ref.key,
-            "citation": ref.citation,
-            "title": ref.title,
-            "kind": ref.kind.value,
-            "doi": ref.doi,
-            "arxiv_id": ref.arxiv_id,
-            "pdf_urls": list(ref.pdf_urls),
-            "author": ref.author,
-        }
-        items.append({k: v for k, v in item.items() if v})
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".part")
-    tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)
-    logger.info("saved references file=%s count=%d", path.name, len(refs))
-
-
-REFERENCE_LIST_NAMES = ("references.txt", "references.md", "references.json")
-
-
-def find_reference_list(folder: Path) -> Path | None:
-    """Pick the reference list in the input folder.
-
-    A pasted APA list (`references.txt` / `references.md`) wins over a converted `references.json`.
-
-    Args:
-        folder: Input folder, usually `DATA_DIR/input`.
+        ref: Reference.
 
     Returns:
-        The first existing file in `REFERENCE_LIST_NAMES` order, or None.
+        JSON-ready dict.
     """
-    return next((folder / name for name in REFERENCE_LIST_NAMES if (folder / name).is_file()), None)
+    item: dict[str, object] = {
+        "key": ref.key,
+        "citation": ref.citation,
+        "title": ref.title,
+        "kind": ref.kind.value,
+        "doi": ref.doi,
+        "arxiv_id": ref.arxiv_id,
+        "pdf_urls": list(ref.pdf_urls),
+        "author": ref.author,
+    }
+    return {k: v for k, v in item.items() if v}
+
+
+def _ref_from_dict(item: dict[str, object]) -> Reference:
+    """Rebuild a reference from its JSON form.
+
+    Args:
+        item: Dict written by `_ref_to_dict` (or an old reference-list entry).
+
+    Returns:
+        The reference.
+    """
+    urls = item.get("pdf_urls") or []
+    return Reference(
+        key=str(item["key"]),
+        citation=str(item.get("citation", "")),
+        doi=str(item.get("doi", "")),
+        kind=ReferenceKind(str(item.get("kind", "article"))),
+        arxiv_id=str(item.get("arxiv_id", "")),
+        pdf_urls=tuple(str(u) for u in urls) if isinstance(urls, list) else (),
+        title=str(item.get("title", "")),
+        author=str(item.get("author", "")),
+    )
+
+
+def load_items(path: Path) -> list[TrackedItem]:
+    """Load the list state; an old reference list (no `status`) is migrated to pending items.
+
+    Args:
+        path: State JSON (`DATA_DIR/input/references.json`); missing file = empty list.
+
+    Returns:
+        List items (migrated items have an empty `apa` until they are identified again).
+    """
+    if not path.is_file():
+        return []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    items = []
+    for entry in raw:
+        if "status" not in entry:  # old format: one reference per entry
+            ref = _ref_from_dict(entry)
+            items.append(TrackedItem(ref.key, ref.citation, ref, "", ItemStatus.PENDING))
+            continue
+        ref_data = entry.get("reference")
+        items.append(
+            TrackedItem(
+                key=entry["key"],
+                input=entry.get("input", ""),
+                reference=_ref_from_dict(ref_data) if ref_data else None,
+                apa=entry.get("apa", ""),
+                status=ItemStatus(entry["status"]),
+                file=entry.get("file", ""),
+                note=entry.get("note", ""),
+                source=entry.get("source", ""),
+                check=entry.get("check", ""),
+            )
+        )
+    logger.info("loaded list file=%s items=%d", path.name, len(items))
+    return items
+
+
+def save_items(path: Path, items: list[TrackedItem]) -> None:
+    """Write the list state atomically.
+
+    Args:
+        path: State JSON path.
+        items: List items.
+    """
+    data = []
+    for item in items:
+        entry: dict[str, object] = {
+            "key": item.key,
+            "input": item.input,
+            "apa": item.apa,
+            "status": item.status.value,
+            "file": item.file,
+            "note": item.note,
+            "source": item.source,
+            "check": item.check,
+            "reference": _ref_to_dict(item.reference) if item.reference else None,
+        }
+        data.append({k: v for k, v in entry.items() if v or k in ("key", "status")})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".part")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+    logger.info("saved list file=%s items=%d", path.name, len(items))

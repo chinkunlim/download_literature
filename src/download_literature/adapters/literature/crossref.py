@@ -22,16 +22,20 @@ _SKIPPED_TYPES = {"dataset", "peer-review", "component", "grant", "standard", "d
 
 
 def _year(item: dict[str, Any]) -> int | None:
-    """Read the publication year from a Crossref record.
+    """Read the year to cite from a Crossref record.
 
     Args:
         item: Crossref work record.
 
     Returns:
-        First year found in issued / published-print / published-online, or None.
+        Year of the journal issue / printed version when known (that is how articles are cited), else the
+        issued or online year, or None.
     """
-    for field in ("issued", "published-print", "published-online"):
-        parts = (item.get(field) or {}).get("date-parts") or [[None]]
+    issue = item.get("journal-issue") or {}
+    candidates = [issue.get("published-print"), issue.get("published-online")]
+    candidates += [item.get(f) for f in ("published-print", "issued", "published-online")]
+    for field in candidates:
+        parts = (field or {}).get("date-parts") or [[None]]
         if parts[0] and parts[0][0]:
             return int(parts[0][0])
     return None

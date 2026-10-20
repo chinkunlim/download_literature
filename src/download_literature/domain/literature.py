@@ -220,16 +220,3 @@ class WorkMeta:
     publisher: str = ""
     edition: str = ""
     genre: str = ""
-
-
-@dataclass(frozen=True)
-class ConversionNote:
-    """Something the user should check about one entry of a converted reference list.
-
-    Attributes:
-        citation: The entry as written in the list.
-        message: What happened (e.g. no DOI found, DOI unknown).
-    """
-
-    citation: str
-    message: str

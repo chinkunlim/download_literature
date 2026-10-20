@@ -4,34 +4,20 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from download_literature.adapters.literature.crossref import parse_crossref_work  # noqa: E402
-from download_literature.adapters.literature.files import (  # noqa: E402
-    find_reference_list,
-    load_references,
-    save_references,
-)
 from download_literature.domain.apa import parse_apa, split_entries  # noqa: E402
 from download_literature.domain.literature import (  # noqa: E402
-    ConversionNote,
-    DownloadOutcome,
-    DownloadStatus,
     Reference,
     ReferenceKind,
     SourceError,
     WorkMeta,
 )
-from download_literature.services.literature import render_report  # noqa: E402
-from download_literature.services.reference_builder import (  # noqa: E402
-    build_references,
-    make_key,
-    merge_with_existing,
-)
+from download_literature.services.reference_builder import make_key, resolve_entry  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -167,6 +153,12 @@ class FakeResolver:
         return []
 
 
+def _one(text: str, resolver: FakeResolver) -> tuple[Reference | None, str]:
+    """Resolve one line and return (reference, note)."""
+    res = resolve_entry(text, resolver, set())
+    return res.reference, res.note
+
+
 GROSS = WorkMeta(
     "10.1037/1089-2680.2.3.271",
     "The Emerging Field of Emotion Regulation: An Integrative Review",
@@ -181,11 +173,11 @@ class BuildTest(unittest.TestCase):
 
     def test_missing_doi_is_found_by_search(self) -> None:
         """A matching search hit (title and year) supplies the DOI and Crossref's title."""
-        refs, notes = build_references([_entries()[2]], FakeResolver({}, {"Gross": [GROSS]}))
-        self.assertEqual(refs[0].doi, GROSS.doi)
-        self.assertEqual(refs[0].title, GROSS.title)
-        self.assertEqual(refs[0].key, "Gross_1998_EmergingField")
-        self.assertEqual(notes, [])
+        ref, note = _one(_entries()[2], FakeResolver({}, {"Gross": [GROSS]}))
+        self.assertEqual(ref.doi, GROSS.doi)
+        self.assertEqual(ref.title, GROSS.title)
+        self.assertEqual(ref.key, "Gross_1998_EmergingField")
+        self.assertEqual(note, "")
 
     def test_book_review_hit_is_not_taken_for_a_book(self) -> None:
         """A journal article with the book's title (e.g. a review) does not turn a book into an article."""
@@ -196,18 +188,18 @@ class BuildTest(unittest.TestCase):
             ReferenceKind.ARTICLE,
             "Smith",
         )
-        refs, _ = build_references([_entries()[0]], FakeResolver({}, {"Beck": [review]}))
-        self.assertEqual(refs[0].kind, ReferenceKind.BOOK)
-        self.assertEqual(refs[0].doi, "")
+        ref, _ = _one(_entries()[0], FakeResolver({}, {"Beck": [review]}))
+        self.assertEqual(ref.kind, ReferenceKind.BOOK)
+        self.assertEqual(ref.doi, "")
 
     def test_wrong_search_hit_is_rejected_with_note(self) -> None:
         """A hit with a different title is ignored and the entry is flagged."""
         other = WorkMeta(
             "10.1/x", "Something else entirely about emotions", 1998, ReferenceKind.ARTICLE, "Gross"
         )
-        refs, notes = build_references([_entries()[2]], FakeResolver({}, {"Gross": [other]}))
-        self.assertEqual(refs[0].doi, "")
-        self.assertIn("no DOI found", notes[0].message)
+        ref, note = _one(_entries()[2], FakeResolver({}, {"Gross": [other]}))
+        self.assertEqual(ref.doi, "")
+        self.assertIn("no DOI found", note)
 
     def test_hit_by_another_first_author_is_rejected(self) -> None:
         """A commentary whose title quotes the paper (other first author) is not accepted."""
@@ -238,8 +230,8 @@ class BuildTest(unittest.TestCase):
             ReferenceKind.ARTICLE,
             "Lieberman",
         )
-        refs, _ = build_references([entry], FakeResolver({}, {"Lieberman": [opinion, real_full]}))
-        self.assertEqual(refs[0].doi, real.doi)
+        ref, _ = _one(entry, FakeResolver({}, {"Lieberman": [opinion, real_full]}))
+        self.assertEqual(ref.doi, real.doi)
 
     def test_short_crossref_title_is_accepted_when_author_and_year_match(self) -> None:
         """Crossref may store only the main title; it is accepted when author and year agree."""
@@ -257,36 +249,36 @@ class BuildTest(unittest.TestCase):
         other_author = WorkMeta(
             "10.1/other", "Putting Feelings Into Words", 2007, ReferenceKind.ARTICLE, "Smith"
         )
-        refs, notes = build_references([entry], FakeResolver({}, {"Lieberman": [other_author, short]}))
-        self.assertEqual(refs[0].doi, short.doi)
-        self.assertEqual(refs[0].title, "Putting feelings into words: Affect labeling disrupts amygdala")
-        self.assertEqual(notes, [])
+        ref, note = _one(entry, FakeResolver({}, {"Lieberman": [other_author, short]}))
+        self.assertEqual(ref.doi, short.doi)
+        self.assertEqual(ref.title, "Putting feelings into words: Affect labeling disrupts amygdala")
+        self.assertEqual(note, "")
 
     def test_given_doi_is_confirmed_and_kind_taken_from_crossref(self) -> None:
         """A DOI in the citation is looked up; Crossref's type wins over the guess."""
         chapter = WorkMeta(
             "10.1016/bs.aesp.2016.10.002", "Self-Distancing", 2017, ReferenceKind.CHAPTER, "Kross"
         )
-        refs, notes = build_references([_entries()[3]], FakeResolver({chapter.doi: chapter}, {}))
-        self.assertEqual(refs[0].kind, ReferenceKind.CHAPTER)
-        self.assertEqual(refs[0].title, "Self-distancing: Theory, research, and current directions")
-        self.assertEqual(notes, [])
+        ref, note = _one(_entries()[3], FakeResolver({chapter.doi: chapter}, {}))
+        self.assertEqual(ref.kind, ReferenceKind.CHAPTER)
+        self.assertEqual(ref.title, "Self-distancing: Theory, research, and current directions")
+        self.assertEqual(note, "")
 
     def test_unknown_doi_and_lookup_errors_are_noted(self) -> None:
         """Unknown DOIs and failing lookups keep the parsed data and add a note."""
         entry = _entries()[1]
-        refs, notes = build_references(
-            [entry, entry.replace("10.1191/1478088706qp063oa", "10.9999/boom")], FakeResolver({}, {})
-        )
-        self.assertEqual(refs[0].doi, "10.1191/1478088706qp063oa")
-        self.assertIn("not found on Crossref", notes[0].message)
-        self.assertIn("lookup failed", notes[1].message)
+        ref, note = _one(entry, FakeResolver({}, {}))
+        assert ref is not None
+        self.assertEqual(ref.doi, "10.1191/1478088706qp063oa")
+        self.assertIn("not found on Crossref", note)
+        _, note = _one(entry.replace("10.1191/1478088706qp063oa", "10.9999/boom"), FakeResolver({}, {}))
+        self.assertIn("lookup failed", note)
 
     def test_unidentified_free_text_becomes_a_note(self) -> None:
-        """A non-APA line that title search cannot identify becomes a note, not a reference."""
-        refs, notes = build_references(["Appendix A"], FakeResolver({}, {}))
-        self.assertEqual(refs, [])
-        self.assertIn("not found", notes[0].message)
+        """A non-APA line that title search cannot identify has no reference, only a note."""
+        ref, note = _one("Appendix A", FakeResolver({}, {}))
+        self.assertIsNone(ref)
+        self.assertIn("not found", note)
 
     def test_keys_are_unique_and_ascii(self) -> None:
         """Same author/year/title start gets a suffix; accents are folded to ASCII."""
@@ -297,98 +289,6 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(second, "Toth-Kiraly_2021_DevelopmentAnother")
         third = make_key("Tóth-Király", 2021, "The development of a scale", taken)
         self.assertEqual(third, "Toth-Kiraly_2021_DevelopmentScale_b")
-
-
-class MergeTest(unittest.TestCase):
-    """Keeping keys and manual additions when a list is converted again."""
-
-    def test_existing_key_urls_and_kind_are_kept(self) -> None:
-        """A matching old entry (same DOI) keeps key, URLs and kind; order follows the new list."""
-        old = [
-            Reference(
-                "Braun_2006_QRP",
-                "old",
-                doi="10.1191/1478088706QP063OA",
-                pdf_urls=("https://repo/braun.pdf",),
-                title="Using thematic analysis in psychology",
-            ),
-            Reference("Dropped_2000", "gone", doi="10.1/gone"),
-        ]
-        new = [
-            Reference("Gross_1998_EmergingField", "Gross", doi="10.1037/x", title="T"),
-            Reference(
-                "Braun_2006_UsingThematic",
-                "Braun new",
-                doi="10.1191/1478088706qp063oa",
-                pdf_urls=("https://new/url",),
-                title="Using thematic analysis in psychology",
-            ),
-        ]
-        merged = merge_with_existing(new, old)
-        self.assertEqual([r.key for r in merged], ["Gross_1998_EmergingField", "Braun_2006_QRP"])
-        self.assertEqual(merged[1].pdf_urls, ("https://repo/braun.pdf", "https://new/url"))
-        self.assertEqual(merged[1].citation, "Braun new")
-
-    def test_match_by_title_when_no_doi(self) -> None:
-        """Books without DOI match on title."""
-        old = [
-            Reference(
-                "Beck_1976_book",
-                "old",
-                kind=ReferenceKind.BOOK,
-                title="Cognitive therapy and the emotional disorders",
-            )
-        ]
-        new = [
-            Reference(
-                "Beck_1976_CognitiveTherapy",
-                "new",
-                kind=ReferenceKind.BOOK,
-                title="Cognitive Therapy and the Emotional Disorders",
-            )
-        ]
-        self.assertEqual(merge_with_existing(new, old)[0].key, "Beck_1976_book")
-
-
-class SaveTest(unittest.TestCase):
-    """Writing the reference JSON."""
-
-    def test_round_trip(self) -> None:
-        """Saved references load back unchanged; empty fields are omitted from the file."""
-        refs = [
-            Reference("A_2020_X", "A (2020)", doi="10.1/a", title="X", pdf_urls=("https://u",)),
-            Reference("B_1990_Y", "B (1990)", kind=ReferenceKind.BOOK, title="Y"),
-        ]
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "refs.json"
-            save_references(path, refs)
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            self.assertNotIn("doi", raw[1])
-            self.assertEqual(load_references(path), refs)
-
-
-class InputAndReportTest(unittest.TestCase):
-    """Picking the input file and reporting conversion notes."""
-
-    def test_text_list_is_preferred_over_json(self) -> None:
-        """references.txt / .md win over references.json; nothing found gives None."""
-        with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp)
-            self.assertIsNone(find_reference_list(folder))
-            (folder / "references.json").write_text("[]", encoding="utf-8")
-            self.assertEqual(find_reference_list(folder), folder / "references.json")
-            (folder / "references.md").write_text("x", encoding="utf-8")
-            self.assertEqual(find_reference_list(folder), folder / "references.md")
-            (folder / "references.txt").write_text("x", encoding="utf-8")
-            self.assertEqual(find_reference_list(folder), folder / "references.txt")
-
-    def test_report_lists_conversion_notes(self) -> None:
-        """Notes appear in their own section after the download table."""
-        outcome = DownloadOutcome(Reference("A", "A (2020)"), DownloadStatus.FAILED, detail="x")
-        report = render_report([outcome], [ConversionNote("Gross (1998) ...", "no DOI found")])
-        self.assertIn("## Check these citations", report)
-        self.assertIn("| Gross (1998) ... | no DOI found |", report)
-        self.assertNotIn("## Check these citations", render_report([outcome]))
 
 
 if __name__ == "__main__":

@@ -122,6 +122,15 @@ class ResolveEntryTest(unittest.TestCase):
         self.assertIn("(2012). Dealing with feeling: A meta-analysis of the Process Model. *Psych", res.apa)
         self.assertEqual(res.note, "")
 
+    def test_unverified_apa_book_is_still_formatted(self) -> None:
+        """An APA book not found in any database is re-written with an italic title."""
+        line = "Beck, A. T. (1976). Cognitive therapy and the emotional disorders. Intl. Universities Press."
+        res = resolve_entry(line, FakeResolver({}, []), set())
+        self.assertEqual(
+            res.apa,
+            "Beck, A. T. (1976). *Cognitive therapy and the emotional disorders*. Intl. Universities Press.",
+        )
+
     def test_unresolved_free_text(self) -> None:
         """Nothing found: no reference, the input is kept and a note explains it."""
         res = resolve_entry("Some unknown working paper", FakeResolver({}, [OTHER]), set())

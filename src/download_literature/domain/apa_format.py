@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import re
 
-from download_literature.domain.literature import WorkMeta
+from download_literature.domain.apa import ApaEntry
+from download_literature.domain.literature import ReferenceKind, WorkMeta
 
 _SENTENCE_BREAK = (":", "?", "!", ".")
 
@@ -41,7 +42,11 @@ def _author(family: str, given: str) -> str:
     Returns:
         `Family, G. N.` or the group name.
     """
-    return f"{family}, {_initials(given)}" if given.strip() else family
+    if not given.strip():
+        return family
+    if family.isupper() and len(family) > 1:  # some records store surnames in capitals ("NEFF")
+        family = family.title()
+    return f"{family}, {_initials(given)}"
 
 
 def format_authors(authors: tuple[tuple[str, str], ...]) -> str:
@@ -182,4 +187,20 @@ def format_apa(meta: WorkMeta, title: str = "") -> str:
     parts = [_end(authors) if authors else "", f"({year}).", title_part, _source(meta)]
     if meta.doi:
         parts.append(f"https://doi.org/{meta.doi}")
+    return " ".join(p for p in parts if p)
+
+
+def format_entry(entry: ApaEntry) -> str:
+    """Re-write a parsed APA entry that no database could confirm (e.g. an older book).
+
+    Args:
+        entry: Parsed user entry.
+
+    Returns:
+        APA text built from the entry's own parts; book titles are italic.
+    """
+    year = f"({entry.year})." if entry.year else "(n.d.)."
+    title = f"*{entry.title}*." if entry.kind_hint is ReferenceKind.BOOK else _end(entry.title)
+    link = f"https://doi.org/{entry.doi}" if entry.doi else " ".join(entry.urls)
+    parts = [_end(entry.authors_text) if entry.authors_text else "", year, title, entry.source_text, link]
     return " ".join(p for p in parts if p)

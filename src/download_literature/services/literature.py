@@ -15,7 +15,6 @@ from typing import Protocol
 
 from download_literature.domain.literature import (
     BookInfo,
-    ConversionNote,
     DownloadOutcome,
     DownloadStatus,
     NeedsUserError,
@@ -457,28 +456,3 @@ def download_all(
     failed = sum(o.status is DownloadStatus.FAILED for o in outcomes)
     logger.info("download batch done count=%d failed=%d", len(outcomes), failed)
     return outcomes
-
-
-def render_report(outcomes: list[DownloadOutcome], notes: list[ConversionNote] | None = None) -> str:
-    """Build a Markdown report of the batch.
-
-    Args:
-        outcomes: Outcomes from `download_all`.
-        notes: Conversion notes from the APA step; shown in their own section when present.
-
-    Returns:
-        Markdown text with a summary line, one table row per reference and the notes.
-    """
-    counts = {s: sum(o.status is s for o in outcomes) for s in DownloadStatus}
-    summary = ", ".join(f"{s.value}: {n}" for s, n in counts.items())
-    rows = [
-        f"| {o.reference.citation} | {o.status.value} | {o.path.name if o.path else ''} "
-        f"| {'; '.join(x for x in (o.source, o.detail) if x)} |"
-        for o in outcomes
-    ]
-    lines = ["# Literature download report", "", summary, "", "| Reference | Status | File | Source / note |"]
-    lines += ["| --- | --- | --- | --- |"] + rows
-    if notes:
-        lines += ["", "## Check these citations", "", "| Citation | Note |", "| --- | --- |"]
-        lines += [f"| {n.citation} | {n.message} |" for n in notes]
-    return "\n".join(lines) + "\n"

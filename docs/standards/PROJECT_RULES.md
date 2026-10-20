@@ -5,7 +5,7 @@
 
 ## 1. 領域知識與術語
 
-- 使用者提供的清單是 `DATA_DIR/input/references.txt`（APA）；程式轉成同名 `references.json`（key、citation、title、doi、arxiv_id、pdf_urls、kind），重跑時保留舊 key 與手動修改（ADR-002）。PDF 存在 `DATA_DIR/output/literature/<key>.pdf`。
+- 使用者的清單是 `DATA_DIR/input/references.md`（待處理區 + APA 7 表格，ADR-005），程式狀態在同名 `references.json`。PDF 存在 `DATA_DIR/output/literature/<key>.pdf`。
 - 東華大學（NDHU）用 OpenAthens，redirector 網域 `ndhu.edu.tw`；校內 IP（134.208.x.x）直接授權。
 
 ## 2. 本專案特有的規則
@@ -20,4 +20,5 @@
 
 ## 4. 禁止事項
 
-- 不得自動通過 Cloudflare / CAPTCHA，不得使用影子圖書館（Sci-Hub、LibGen 等）；遇到驗證就停下來等使用者（ADR-001）。
+- 不得自動通過 Cloudflare / CAPTCHA，不得使用影子圖書館（Sci-Hub、LibGen 等）；預設遇到驗證就標「需人工處理」跳過，`--interactive` 才等使用者（ADR-001、ADR-004）。
+- 書籍只下載公版／開放授權的掃描檔，不下載 Internet Archive 的借閱本（ADR-004）。
