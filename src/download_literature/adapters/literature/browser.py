@@ -164,7 +164,9 @@ class BrowserPublisherFetcher:
         logger.info("browser closed")
 
     def fetch_pdf(self, reference: Reference) -> tuple[bytes, str] | None:
-        """Open the reference's DOI and download the publisher PDF.
+        """Download the PDF via the publisher (DOI), then via the reference's own URLs in the browser.
+
+        The second route covers author / university copies on sites that reject plain HTTP clients.
 
         Args:
             reference: Reference with a DOI.
@@ -173,21 +175,56 @@ class BrowserPublisherFetcher:
             (PDF bytes, PDF URL), or None when no PDF could be obtained.
 
         Raises:
-            SourceError: When the browser was not started or navigation fails.
+            SourceError: When the browser was not started.
         """
         if self._ctx is None:
             raise SourceError("browser not started")
         page = self._ctx.new_page()
         try:
-            page.goto(entry_url(reference.doi, self._domain), wait_until="domcontentloaded", timeout=60_000)
-            self._settle(page)
-            pdf_url = self._find_pdf_url(page)
-            logger.info("publisher page key=%s url=%s pdf=%s", reference.key, page.url, pdf_url)
-            return self._download(page, pdf_url) if pdf_url else None
-        except PlaywrightError as exc:
-            raise SourceError(f"browser error: {exc.message}") from exc
+            for url in [None, *reference.pdf_urls]:  # None = publisher route via the DOI
+                try:
+                    got = self._via_publisher(page, reference) if url is None else self._via_site(page, url)
+                except PlaywrightError as exc:
+                    logger.warning("browser route failed key=%s: %s", reference.key, exc.message)
+                    continue
+                if got is not None:
+                    return got
+            return None
         finally:
             page.close()
+
+    def _via_publisher(self, page: Page, reference: Reference) -> tuple[bytes, str] | None:
+        """Open the DOI (through OpenAthens) and download the publisher PDF.
+
+        Args:
+            page: Browser tab to use.
+            reference: Reference with a DOI.
+
+        Returns:
+            (PDF bytes, PDF URL), or None.
+        """
+        page.goto(entry_url(reference.doi, self._domain), wait_until="domcontentloaded", timeout=60_000)
+        self._settle(page)
+        pdf_url = self._find_pdf_url(page)
+        logger.info("publisher page key=%s url=%s pdf=%s", reference.key, page.url, pdf_url)
+        return self._download(page, pdf_url) if pdf_url else None
+
+    def _via_site(self, page: Page, pdf_url: str) -> tuple[bytes, str] | None:
+        """Download a known PDF URL from inside its own site (open the site's home page, then fetch).
+
+        Opening the home page first avoids navigating to a file that the browser would save as a download.
+
+        Args:
+            page: Browser tab to use.
+            pdf_url: Author or repository PDF URL.
+
+        Returns:
+            (PDF bytes, URL), or None.
+        """
+        page.goto(_origin(pdf_url) + "/", wait_until="domcontentloaded", timeout=60_000)
+        self._settle(page)
+        body = self._fetch_in_page(page, pdf_url)
+        return (body, pdf_url) if is_pdf(body) else None
 
     def _needs_user(self, page: Page) -> bool:
         """Tell whether the page is a sign-in or bot check the user has to finish.

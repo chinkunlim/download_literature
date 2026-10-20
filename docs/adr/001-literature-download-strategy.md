@@ -23,6 +23,7 @@
 - 校內 IP 時 redirector 直接轉到出版社；校外時出現 OpenAthens 登入頁，程式**只在 `*.openathens.net`** 填入 `.env` 的 `USER_EMAIL` / `USER_PASSWORD`。
 - Cloudflare 驗證、CAPTCHA、Google / Microsoft 登入一律不自動處理，程式暫停等使用者在視窗完成（`--wait` 秒）。
 - PDF 用頁面內 `fetch()` 下載（見 ISSUE-001），並以前兩頁文字比對標題（見 ISSUE-002）。
+- 學校沒訂閱時，改用作者或大學網站公開的版本（寫在文獻清單的 `pdf_urls`）；這些網站若擋程式，瀏覽器會先開該站首頁再從頁面內下載（2026-10-20 補充）。ResearchGate、Academia.edu 需要登入，不採用。
 
 ## 4. 影響與代價
 
