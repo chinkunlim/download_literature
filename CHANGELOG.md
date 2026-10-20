@@ -9,6 +9,9 @@ All notable changes to **download_literature** are documented here
 - feat(literature): add literature downloader with open-access lookup and OpenAthens browser route (TASK-001) (`TASK-001`, by `@claude-code`)
 - feat(literature): try author and repository PDF URLs through the browser (TASK-001) (`TASK-001`, by `@claude-code`)
 
+### Fixed
+- fix(literature): wait for a stable page after bot checks before fetching (TASK-001) (`TASK-001`, by `@claude-code`)
+
 ## [0.1.0] - 2026-10-20
 ### Added
 - Initial project scaffold (framework v3.1.0).

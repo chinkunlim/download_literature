@@ -235,7 +235,10 @@ class BrowserPublisherFetcher:
         Returns:
             True on OpenAthens / identity-provider pages or challenge pages.
         """
-        title = (page.title() or "").lower()
+        try:
+            title = (page.title() or "").lower()
+        except PlaywrightError:
+            return True  # page is navigating (e.g. a challenge redirect): keep waiting (ISSUE-003)
         host = (urlparse(page.url).hostname or "").lower()
         sign_in = is_openathens_host(page.url) or any(
             h in host for h in ("login.microsoftonline.com", "accounts.google.com", "sso.", "idp.")
@@ -249,15 +252,29 @@ class BrowserPublisherFetcher:
             page: Current page.
         """
         deadline = time.monotonic() + self._wait
-        filled = warned = False
-        while self._needs_user(page) and time.monotonic() < deadline:
-            if is_openathens_host(page.url) and not filled:
-                filled = self._fill_openathens(page)
-            elif not warned:
-                logger.warning("請在 Chrome 視窗完成登入或驗證（最多等 %d 秒） url=%s", self._wait, page.url)
-                warned = True
-            page.wait_for_timeout(2000)
+        state = {"filled": False, "warned": False}
+        clear_checks = 0  # a challenge page can vanish briefly before reloading; require two calm checks
+        while clear_checks < 2 and time.monotonic() < deadline:
+            if self._needs_user(page):
+                clear_checks = 0
+                self._handle_blocker(page, state)
+            else:
+                clear_checks += 1
+            page.wait_for_timeout(1500)
         page.wait_for_load_state("domcontentloaded")
+
+    def _handle_blocker(self, page: Page, state: dict[str, bool]) -> None:
+        """Fill the OpenAthens form once, otherwise ask the user (once) to finish the check.
+
+        Args:
+            page: Page showing a sign-in or bot check.
+            state: `filled` / `warned` flags shared across one `_settle` call.
+        """
+        if is_openathens_host(page.url) and not state["filled"]:
+            state["filled"] = self._fill_openathens(page)
+        elif not state["warned"]:
+            logger.warning("請在 Chrome 視窗完成登入或驗證（最多等 %d 秒） url=%s", self._wait, page.url)
+            state["warned"] = True
 
     def _fill_openathens(self, page: Page) -> bool:
         """Type the library e-mail and password on the OpenAthens page (one or two steps).

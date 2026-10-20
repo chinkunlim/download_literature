@@ -79,6 +79,7 @@ download_literature/
 │   ├── known-issues/                       # [已知問題庫] 一問題一檔案
 │   │   ├── 001-playwright-request-blocked.md
 │   │   ├── 002-openalex-wrong-paper.md
+│   │   ├── 003-cloudflare-loop-automated-chrome.md
 │   │   ├── _TEMPLATE.md                    # 已知問題範本 (tracker_cli 會套用)
 │   │   └── KNOWN_ISSUES.md                 # 已知問題總表 (🔴/🟡/🟢)
 │   ├── specs/                              # [功能規格書] PRD / API Contract
