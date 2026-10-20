@@ -77,6 +77,7 @@ download_literature/
 │   │   ├── 005-markdown-reference-list.md
 │   │   ├── 006-sqlite-store-and-runner.md
 │   │   ├── 007-chinese-references-airiti.md
+│   │   ├── 008-local-web-app-and-api.md
 │   │   ├── _TEMPLATE.md                    # ADR 範本 (tracker_cli 會套用)
 │   │   └── DECISIONS.md                    # 架構決策總表
 │   ├── architecture/                       # [系統架構與資料模型]
@@ -100,6 +101,9 @@ download_literature/
 │   │   ├── PROJECT_RULES.md
 │   │   └── TESTING_AND_QUALITY.md          # 測試金字塔與 DoD 驗收清單
 │   └── TEMPLATE_FEEDBACK.md
+├── integrations/
+│   └── openwebui/
+│       └── literature_tool.py
 ├── scripts/                                # 【專案腳本】agentctl.py 是框架的單一入口；其餘放本專案自己的腳本
 │   └── agentctl.py                         # [單一入口] 轉呼叫 .agents/bin/agentctl.py
 ├── src/                                    # 【核心原始碼層】分層與依賴方向定義於 .agents/project.toml
@@ -143,10 +147,18 @@ download_literature/
 │       │   ├── models.py
 │       │   └── tracker.py
 │       ├── entrypoints/
+│       │   ├── http/
+│       │   │   ├── static/
+│       │   │   │   └── index.html
+│       │   │   ├── __init__.py
+│       │   │   ├── app.py
+│       │   │   ├── jobs.py
+│       │   │   └── schemas.py
 │       │   ├── __init__.py
 │       │   ├── cli.py
 │       │   ├── fetch_cli.py
-│       │   └── runner.py
+│       │   ├── runner.py
+│       │   └── web_cli.py
 │       ├── services/
 │       │   ├── __init__.py
 │       │   ├── greeting.py
@@ -172,6 +184,7 @@ download_literature/
 │   ├── test_locks.py
 │   ├── test_markdown_files.py
 │   ├── test_tracker.py
+│   ├── test_web.py
 │   └── test_workflow.py
 ├── .editorconfig
 ├── .env.example                            # [設定範本] 環境變數清單與預設值說明

@@ -6,15 +6,18 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.20.0",
+    "fastapi>=0.151.0",
     "httpx>=0.28.1",
     "playwright>=1.64.0",
     "pypdf>=6.21.1",
     "sqlalchemy>=2.1.5",
+    "uvicorn>=0.54.0",
 ]  # add with `uv add <package>` (never `pip install`)
 
 [project.scripts]
 download-literature = "download_literature.entrypoints.cli:main"
 fetch-literature = "download_literature.entrypoints.fetch_cli:main"
+literature-web = "download_literature.entrypoints.web_cli:main"
 
 [dependency-groups]
 dev = ["ruff>=0.6.0", "mypy>=1.11"]  # add with `uv add --dev <package>`
@@ -25,6 +28,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+download_literature = ["entrypoints/http/static/*", "adapters/db/migrations/*", "adapters/db/migrations/versions/*"]
 
 [tool.uv]
 # Use uv's own downloaded Python (see .python-version), never the system / Homebrew one

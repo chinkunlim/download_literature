@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<!--
+  Literature downloader web page: add references, start processing, follow progress, open PDFs,
+  retry / re-identify / delete items and copy the APA 7 list. Talks to the local JSON API (/api/*).
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文獻下載</title>
+<style>
+  /* Theme tokens: light by default, dark when the system asks for it */
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5f6b7a; --line: #e2e6ec;
+    --accent: #2f5bd3; --accent-ink: #ffffff; --soft: #eef2fb;
+    --ok: #1f8a4c; --warn: #b26b00; --bad: #c0392b; --info: #6b4fbf;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1b2029; --text: #e6e9ef; --muted: #9aa4b2; --line: #2b323e;
+      --accent: #6d8ff0; --accent-ink: #0d1220; --soft: #222a3a;
+      --ok: #4cc27f; --warn: #e3a33d; --bad: #ee6b5d; --info: #a993f0;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.55 -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+           padding: 16px; margin-bottom: 16px; }
+  textarea { width: 100%; min-height: 110px; resize: vertical; padding: 10px; border-radius: 8px;
+             border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .row.spread { justify-content: space-between; }
+  button, .btn { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px;
+                 padding: 7px 12px; font: inherit; cursor: pointer; text-decoration: none; display: inline-block; }
+  button:hover, .btn:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.small, .btn.small { padding: 3px 9px; font-size: 13px; }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  label.check { color: var(--muted); font-size: 14px; display: inline-flex; gap: 6px; align-items: center; }
+  .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+  .msg { font-size: 14px; min-height: 1.2em; margin-top: 8px; }
+  .msg.err { color: var(--bad); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+  .chip { font-size: 13px; padding: 2px 9px; border-radius: 99px; background: var(--soft); color: var(--text); }
+  .bar { height: 8px; border-radius: 99px; background: var(--soft); overflow: hidden; margin: 10px 0 6px; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .tabs button[aria-pressed="true"] { background: var(--soft); border-color: var(--accent); }
+  input[type=search] { flex: 1; min-width: 160px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
+                       background: var(--bg); color: var(--text); font: inherit; }
+  .item { border-top: 1px solid var(--line); padding: 12px 2px; }
+  .item:first-child { border-top: 0; }
+  .item .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .status { font-size: 13px; font-weight: 600; }
+  .s-downloaded { color: var(--ok); } .s-downloaded_copy { color: var(--warn); }
+  .s-needs_review { color: var(--warn); } .s-unavailable, .s-not_found { color: var(--bad); }
+  .s-borrow { color: var(--info); } .s-pending { color: var(--muted); }
+  .key { font-size: 12px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+  .apa { margin: 2px 0; overflow-wrap: anywhere; }
+  .notes { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .stage { font-size: 13px; color: var(--accent); }
+  .stage::before { content: "⟳ "; display: inline-block; animation: spin 1.2s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .actions { margin-top: 6px; }
+  .empty { color: var(--muted); padding: 16px 2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>文獻下載</h1>
+  <p class="sub">貼上文獻 → 開始處理 → 在清單追進度、開啟 PDF、複製 APA 7 清單。</p>
+
+  <section class="panel" aria-labelledby="add-title">
+    <h2 id="add-title">新增文獻</h2>
+    <textarea id="add-text" placeholder="每筆一段或每行一個「- 」項目。可以是完整 APA、作者＋標題、只有標題或 DOI；中英文都可以。&#10;例：Your Brain on ChatGPT: Accumulation of Cognitive Debt…&#10;例：張歆祐、陳怡婷、陳怡樺（2022）。台灣低憂鬱孕產婦正向心理因素初探。中華心理衛生學刊，35(4)，319–346。"></textarea>
+    <div class="row spread" style="margin-top:8px">
+      <span class="hint">加入後會出現在清單，按「開始處理」才會辨識與下載。</span>
+      <button id="add-btn" class="primary">加入清單</button>
+    </div>
+    <div id="add-msg" class="msg" role="status"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="run-title">
+    <h2 id="run-title">處理</h2>
+    <div class="row">
+      <button id="run-btn" class="primary">開始處理</button>
+      <button id="review-btn" title="在電腦前時使用：遇到機器人驗證或登入會等你在 Chrome 完成，並重試「需人工處理」的文獻">人工處理模式</button>
+      <label class="check"><input type="checkbox" id="oa-only"> 只抓開放取用（不開 Chrome）</label>
+    </div>
+    <div class="bar" aria-hidden="true"><div id="bar"></div></div>
+    <div id="run-msg" class="msg" role="status">尚未開始。</div>
+    <div id="counts" class="chips"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="list-title">
+    <div class="row spread" style="margin-bottom:10px">
+      <h2 id="list-title" style="margin:0">文獻清單</h2>
+      <div class="row">
+        <button id="copy-btn" class="small">複製 APA 清單</button>
+        <a class="btn small" href="/api/report.md">下載 report.md</a>
+      </div>
+    </div>
+    <div class="tabs" role="group" aria-label="篩選">
+      <button data-filter="all" aria-pressed="true">全部</button>
+      <button data-filter="attention" aria-pressed="false">需要處理</button>
+      <button data-filter="done" aria-pressed="false">已下載</button>
+      <button data-filter="borrow" aria-pressed="false">需借閱</button>
+      <button data-filter="pending" aria-pressed="false">待處理</button>
+      <input type="search" id="search" placeholder="搜尋作者、標題、key">
+    </div>
+    <div id="list"></div>
+    <div id="copy-msg" class="msg" role="status"></div>
+  </section>
+</main>
+
+<script>
+/* Page logic: fetch the list and status, start jobs, act on items. */
+const $ = (id) => document.getElementById(id);
+const GROUPS = {
+  attention: ["needs_review", "not_found", "unavailable"],
+  done: ["downloaded", "downloaded_copy"],
+  borrow: ["borrow"],
+  pending: ["pending"],
+};
+const LABELS = {
+  downloaded: "✅ 正式版", downloaded_copy: "🟡 作者稿／預印本", needs_review: "⚠️ 需人工處理",
+  borrow: "📕 需借閱", unavailable: "❌ 無法取得", not_found: "❓ 找不到", pending: "⏳ 待處理",
+};
+let items = [];
+let filter = "all";
+let lastJobState = "";
+let statusTimer = null;
+let watchUntil = 0;  // after a start: poll fast until the job is over (short jobs end between slow polls)
+
+/**
+ * Call the local API.
+ * @param {string} path API path.
+ * @param {object} [options] fetch options; `json` is sent as a JSON body.
+ * @returns {Promise<any>} Parsed JSON (or text).
+ */
+async function api(path, options = {}) {
+  const init = { method: options.method || "GET", headers: {} };
+  if (options.json !== undefined) {
+    init.headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(options.json);
+  }
+  const resp = await fetch(path, init);
+  const data = resp.headers.get("content-type")?.includes("json") ? await resp.json() : await resp.text();
+  if (!resp.ok) throw Object.assign(new Error(data.detail || resp.statusText), { status: resp.status });
+  return data;
+}
+
+/**
+ * Escape text for HTML.
+ * @param {string} text Any text.
+ * @returns {string} Safe HTML.
+ */
+function esc(text) {
+  return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/**
+ * Render the item list with the current filter and search.
+ */
+function renderList() {
+  const q = $("search").value.trim().toLowerCase();
+  const shown = items.filter((i) => (filter === "all" || GROUPS[filter].includes(i.status))
+    && (!q || (i.apa + " " + i.key + " " + i.input).toLowerCase().includes(q)));
+  if (!shown.length) { $("list").innerHTML = '<div class="empty">沒有符合的文獻。</div>'; return; }
+  $("list").innerHTML = shown.map((i) => `
+    <article class="item" data-key="${esc(i.key)}">
+      <div class="head">
+        <span class="status s-${i.status}">${i.status_label}</span>
+        <span class="key">${esc(i.key)}</span>
+        ${i.stage ? `<span class="stage">${esc(i.stage)}</span>` : ""}
+      </div>
+      <div class="apa">${i.apa_html}</div>
+      ${i.notes || i.source ? `<div class="notes">${esc([i.notes, i.source && "來源：" + i.source].filter(Boolean).join("；"))}</div>` : ""}
+      <div class="actions row">
+        ${i.file_url ? `<a class="btn small" href="${i.file_url}" target="_blank" rel="noopener">開啟 PDF</a>` : ""}
+        <button class="small" data-act="retry">重試</button>
+        <button class="small" data-act="reidentify">重新辨識</button>
+        <button class="small danger" data-act="delete">刪除</button>
+      </div>
+    </article>`).join("");
+}
+
+/**
+ * Reload the item list from the API.
+ */
+async function loadItems() {
+  items = await api("/api/items");
+  renderList();
+}
+
+/**
+ * Show counts, progress and the last error; reload items while a job runs or when it ends.
+ */
+async function loadStatus() {
+  const s = await api("/api/status");
+  $("counts").innerHTML = Object.entries(s.counts)
+    .map(([k, n]) => `<span class="chip">${LABELS[k] || k} ${n}</span>`).join("");
+  const job = s.job;
+  const busy = s.running || (job && job.state === "running");
+  $("run-btn").disabled = $("review-btn").disabled = busy;
+  if (s.last_error) {
+    $("run-msg").className = "msg err"; $("run-msg").textContent = s.last_error;
+  } else if (job) {
+    const pct = job.total ? Math.round((job.done / job.total) * 100) : 100;
+    $("bar").style.width = (busy ? pct : 100) + "%";
+    const current = Object.entries(s.stages).map(([k, st]) => `${k}：${st}`).join("、");
+    $("run-msg").className = "msg";
+    $("run-msg").textContent = busy
+      ? `處理中 ${job.done}/${job.total}${current ? "　目前：" + current : ""}`
+      : `上次下載：${job.done}/${job.total}（${job.state === "done" ? "完成" : "失敗"}，${(job.finished_at || "").replace("T", " ").slice(0, 16)}）`;
+  } else if (s.running) {
+    $("run-msg").textContent = "準備中…";
+  }
+  if (!busy && s.last_summary && !s.last_error) {
+    $("run-msg").textContent += "　｜　" + s.last_summary;
+  }
+  const watching = Date.now() < watchUntil;
+  const state = busy ? "running" : "idle";
+  if (busy || watching || state !== lastJobState) await loadItems();
+  if (!busy && lastJobState === "running") watchUntil = 0;
+  lastJobState = state;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(loadStatus, busy || watching ? 1500 : 10000);
+}
+
+/**
+ * Start a processing job.
+ * @param {boolean} interactive Wait for bot checks / sign-ins and retry items that need review.
+ */
+async function startRun(interactive) {
+  try {
+    await api("/api/process", { method: "POST", json: { interactive, use_browser: !$("oa-only").checked } });
+    watchUntil = Date.now() + 15000;
+    loadStatus();
+    $("run-msg").className = "msg"; $("run-msg").textContent = interactive
+      ? "人工處理模式已開始：Chrome 出現驗證或登入時，請在 Chrome 視窗完成。" : "已開始處理…";
+  } catch (e) {
+    $("run-msg").className = "msg err";
+    $("run-msg").textContent = e.status === 409 ? "已有處理工作在執行。" : "無法開始：" + e.message;
+  }
+}
+
+$("add-btn").addEventListener("click", async () => {
+  const text = $("add-text").value.trim();
+  if (!text) return;
+  try {
+    const r = await api("/api/items", { method: "POST", json: { text } });
+    $("add-msg").className = "msg"; $("add-msg").textContent = `已加入 ${r.keys.length} 筆，按「開始處理」開始辨識與下載。`;
+    $("add-text").value = "";
+    await loadStatus();
+  } catch (e) { $("add-msg").className = "msg err"; $("add-msg").textContent = "加入失敗：" + e.message; }
+});
+$("run-btn").addEventListener("click", () => startRun(false));
+$("review-btn").addEventListener("click", () => startRun(true));
+$("search").addEventListener("input", renderList);
+document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
+  filter = b.dataset.filter;
+  document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  renderList();
+}));
+$("list").addEventListener("click", async (ev) => {
+  const act = ev.target.dataset?.act;
+  if (!act) return;
+  const key = ev.target.closest(".item").dataset.key;
+  if (act === "delete" && !confirm(`從清單移除 ${key}？（已下載的 PDF 會保留）`)) return;
+  try {
+    if (act === "delete") await api(`/api/items/${encodeURIComponent(key)}`, { method: "DELETE" });
+    else await api(`/api/items/${encodeURIComponent(key)}/${act}`, { method: "POST" });
+    await loadStatus();
+  } catch (e) { alert("操作失敗：" + e.message); }
+});
+$("copy-btn").addEventListener("click", async () => {
+  const apa = await api("/api/apa");
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      "text/html": new Blob([apa.html], { type: "text/html" }),
+      "text/plain": new Blob([apa.text], { type: "text/plain" }),
+    })]);
+    $("copy-msg").textContent = "已複製 APA 清單（貼到 Word 會保留斜體）。";
+  } catch {
+    await navigator.clipboard.writeText(apa.text);
+    $("copy-msg").textContent = "已複製 APA 清單（純文字）。";
+  }
+});
+
+loadStatus();
+</script>
+</body>
+</html>

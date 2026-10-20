@@ -4,27 +4,40 @@
 
 ## 使用方式
 
-**輸入**：在 `DATA_DIR/input/references.md` 的「待處理」加入文獻（每筆一段，可以是 APA、作者＋標題、標題或 DOI），或用網頁／指令新增。
-**結果**：`DATA_DIR/output/report.md`（每篇的 APA、狀態、檔案、來源、備註，以及可複製的 APA 7 清單）；PDF 在 `DATA_DIR/output/literature/`。
+### 網頁（建議）
 
 ```bash
-uv run fetch-literature
+uv run literature-web
 ```
+
+打開 http://127.0.0.1:8765 ：貼上文獻 → 「開始處理」→ 在清單追進度、開啟 PDF、重試／重新辨識／刪除、複製 APA 7 清單（貼到 Word 保留斜體）、下載 report.md。
+在電腦前時按「人工處理模式」：遇到機器人驗證或登入，會等你在 Chrome 完成。
+
+### 檔案與指令
+
+- **輸入**：`DATA_DIR/input/references.md` 的「待處理」（每筆一段，可以是 APA、作者＋標題、標題或 DOI，中英文皆可）。
+- **結果**：`DATA_DIR/output/report.md`（每篇的 APA、狀態、檔案、來源、備註，以及可複製的 APA 7 清單）；PDF 在 `DATA_DIR/output/literature/`。
 
 | 指令 | 用途 |
 |---|---|
+| `uv run fetch-literature` | 處理：md 的新文獻＋所有待處理 |
 | `uv run fetch-literature --add "標題或 APA"` | 新增文獻（可重複 `--add`） |
-| `uv run fetch-literature --status` | 只看目前清單狀態 |
-| `uv run fetch-literature --interactive` | 在電腦前時用：處理「⚠️ 需人工處理」，遇到驗證會等你在 Chrome 完成 |
-| `uv run fetch-literature --retry <key>` / `--delete <key>` | 重新處理／移除某筆 |
-| `uv run fetch-literature --identify-only` | 只辨識新文獻、產生 APA，不下載 |
-| `uv run fetch-literature --no-browser` | 只抓開放取用版本，不開 Chrome |
-| `uv run fetch-literature --refresh <key>` | 嘗試把作者稿／預印本換成正式版 |
+| `uv run fetch-literature --status` | 只看目前狀態 |
+| `uv run fetch-literature --interactive` | 在電腦前時：處理「⚠️ 需人工處理」 |
+| `--retry <key>` / `--reidentify <key>` / `--delete <key>` | 重新下載／重新辨識（新 APA）／移除 |
+| `--identify-only` / `--no-browser` / `--refresh <key>` | 只辨識／只抓開放取用／嘗試換成正式版 |
 
-說明：
-- 資料存在 `DATA_DIR/db/literature.db`；md 檔每次執行後自動更新。一次只會有一個處理工作在跑。
-- 下載順序：正式版優先（出版社的免費正式版 → EBSCO → 出版社網站 → 作者稿／預印本），每篇核對 PDF 標題。
-- 預設不等人工：遇到機器人驗證標「⚠️ 需人工處理」並繼續；程式不會自動點驗證。
+### Open WebUI（Ollama）工具
+
+1. 執行 `uv run literature-web`。
+2. Open WebUI → Workspace → Tools → 新增，貼上 `integrations/openwebui/literature_tool.py` 的內容。
+3. Open WebUI 在 Docker 裡：工具設定（Valves）的 `base_url` 用 `http://host.docker.internal:8765`，並在本專案 `.env` 加 `HTTP_ALLOWED_HOSTS=host.docker.internal`；非 Docker 安裝則用 `http://127.0.0.1:8765`。
+
+### 說明
+
+- 資料在 `DATA_DIR/db/literature.db`；網頁、指令、Open WebUI 共用，一次只會有一個處理工作。
+- 下載順序：正式版優先（出版社免費正式版 → 華藝（中文）→ EBSCO → 出版社網站 → 作者稿／預印本），每篇核對 PDF 標題。
+- 預設不等人工：遇到驗證標「⚠️ 需人工處理」並繼續；程式不會自動點驗證。
 - 書籍：公版書從 Internet Archive 下載；有版權的書標「📕 需借閱」並列出最新版本。
 - 校外時，`.env` 的 `USER_EMAIL` / `USER_PASSWORD` 只會填在 OpenAthens 登入頁。
 

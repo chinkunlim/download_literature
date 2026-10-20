@@ -48,6 +48,9 @@ class AppConfig:
         library_password: Its password (`USER_PASSWORD`); hidden from repr so it never reaches logs.
         openathens_domain: OpenAthens organisation domain for the redirector; empty = plain DOI links.
         database_url_override: `DATABASE_URL` from `.env`; empty = SQLite file in `<data_dir>/db/`.
+        http_port: Port of the local web app (always bound to 127.0.0.1).
+        http_allowed_hosts: Extra Host names accepted by the web app (e.g. `host.docker.internal` for Open
+            WebUI in Docker); empty = this machine only.
         ebsco_profile: Library's EBSCO Discovery profile id (`research.ebsco.com/c/<id>`); empty = skip.
     """
 
@@ -62,6 +65,8 @@ class AppConfig:
     openathens_domain: str = "ndhu.edu.tw"
     ebsco_profile: str = "3pnjf3"
     database_url_override: str = ""
+    http_port: int = 8765
+    http_allowed_hosts: tuple[str, ...] = ()
 
     @property
     def database_url(self) -> str:
@@ -171,4 +176,8 @@ def load_config() -> AppConfig:
         openathens_domain=os.environ.get("OPENATHENS_DOMAIN", "ndhu.edu.tw").strip(),
         ebsco_profile=os.environ.get("EBSCO_PROFILE", "3pnjf3").strip(),
         database_url_override=os.environ.get("DATABASE_URL", "").strip(),
+        http_port=int(os.environ.get("HTTP_PORT", "8765")),
+        http_allowed_hosts=tuple(
+            h.strip() for h in os.environ.get("HTTP_ALLOWED_HOSTS", "").split(",") if h.strip()
+        ),
     )

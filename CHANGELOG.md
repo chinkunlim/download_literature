@@ -16,6 +16,7 @@ All notable changes to **download_literature** are documented here
 - feat(literature): use a Markdown reference list as input and APA 7 output, processing only new entries (by `@claude-code`)
 - feat(literature): store the list in SQLite, share a runner across front ends, split references.md and report.md (by `@claude-code`)
 - feat(literature): identify and download Chinese references through Airiti with Chinese APA 7 formatting (by `@claude-code`)
+- feat(literature): add local web app, JSON API and Open WebUI tool (by `@claude-code`)
 
 ### Fixed
 - fix(literature): wait for a stable page after bot checks before fetching (TASK-001) (`TASK-001`, by `@claude-code`)

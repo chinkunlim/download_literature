@@ -101,6 +101,24 @@ def _print_run(summary: RunSummary) -> None:
         print(f"  已在清單中，略過：{line}")
 
 
+def _apply_edits(runner: Runner, args: argparse.Namespace) -> None:
+    """Apply --add / --retry / --reidentify / --delete.
+
+    Args:
+        runner: Shared runner.
+        args: Parsed options.
+    """
+    none = "（沒有符合的 key）"
+    if args.add:
+        print(f"已加入 {len(runner.add_entries(args.add))} 筆")
+    if args.retry:
+        print(f"重新處理：{', '.join(runner.retry(set(_keys(args.retry)))) or none}")
+    if args.reidentify:
+        print(f"重新辨識：{', '.join(runner.reidentify(set(_keys(args.reidentify)))) or none}")
+    if args.delete:
+        print(f"已移除：{', '.join(runner.delete(set(_keys(args.delete)))) or none}")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run one command.
 
@@ -114,16 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     setup_logging(config.log_level, config.logs_dir if config.log_to_file else None)
     runner = Runner(config)
-    if args.add:
-        print(f"已加入 {len(runner.add_entries(args.add))} 筆")
-    if args.retry:
-        print(f"重新處理：{', '.join(runner.retry(set(_keys(args.retry)))) or '（沒有符合的 key）'}")
-    if args.reidentify:
-        print(
-            f"重新辨識：{', '.join(runner.reidentify(set(_keys(args.reidentify)))) or '（沒有符合的 key）'}"
-        )
-    if args.delete:
-        print(f"已移除：{', '.join(runner.delete(set(_keys(args.delete)))) or '（沒有符合的 key）'}")
+    _apply_edits(runner, args)
     if not args.status:
         options = ProcessOptions(
             args.interactive,

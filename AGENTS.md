@@ -109,6 +109,8 @@ download_literature/
 │   ├── known-issues/                       # [已知問題庫] 一問題一檔案
 │   ├── specs/                              # [功能規格書] PRD / API Contract
 │   └── standards/                          # [工程規範] 依任務載入 (Progressive Disclosure)
+├── integrations/
+│   └── openwebui/
 ├── scripts/                                # 【專案腳本】agentctl.py 是框架的單一入口；其餘放本專案自己的腳本
 ├── src/                                    # 【核心原始碼層】分層與依賴方向定義於 .agents/project.toml
 │   └── download_literature/
