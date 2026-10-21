@@ -8,4 +8,4 @@
 
 | 日期 | 建議 | 來源（對話 / 任務） | 狀態 |
 |---|---|---|---|
-| 2026-10-20 | `DATA_DIR` 是通用名稱，別的專案在系統環境設了同名變數時會蓋過本專案 `.env`（`load_dotenv_file` 用 `setdefault`）。建議：改用專案專屬名稱（例如 `<PROJECT>_DATA_DIR`），或讓 `.env` 的 `DATA_DIR` 優先，並在啟動 log 顯示實際資料夾。 | 全面檢查對話 / TASK-001、ISSUE-006 | 待決定 |
+| 2026-10-20 | `DATA_DIR` 是通用名稱，別的專案在系統環境設了同名變數時會蓋過本專案 `.env`（`load_dotenv_file` 用 `setdefault`）。建議：改用專案專屬名稱（例如 `<PROJECT>_DATA_DIR`），或讓 `.env` 的 `DATA_DIR` 優先，並在啟動 log 顯示實際資料夾。 | 全面檢查對話 / TASK-001、ISSUE-006 | 已採用（母版：專案 .env 的 DATA_DIR 優先，doctor 與啟動 log 顯示實際資料夾） |
