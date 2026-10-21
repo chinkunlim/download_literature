@@ -1,7 +1,7 @@
 {
-  "framework_version": "3.2.0",
-  "template_commit": "b30c944",
-  "installed_at": "2026-10-21T14:18:56Z",
+  "framework_version": "3.3.0",
+  "template_commit": "8cae748",
+  "installed_at": "2026-10-21T15:34:23Z",
   "skills": [
     "adr-issue-tracker",
     "api-adapter-scaffold",
@@ -26,7 +26,7 @@
     ".agents/hooks/pre-commit": "183c2b2ae930a31924e44b9a44146cc30d23ce46275fd25c34edf263ed4347dc",
     ".agents/hooks/pre-push": "5ca6b9a0a84148b616b28992af2af979a0f61959a667e2715a5befeba9078ea2",
     ".agents/lib/framework_install.py": "4d3b122e51f1135ead41b200f8f65d25713e67d49676d310270c986d8db0f501",
-    ".agents/lib/project_config.py": "fee5899068eee46beb4fd10a981fa8473aa746ee10b00bea3e002aca5a64ffa6",
+    ".agents/lib/project_config.py": "1e03bbdf0f30052387123461d6ecaf0841501475cd77cf1887e91fb037bfb85d",
     ".agents/lib/tree_annotations.py": "9287fb46efa4c027e682cb4fbb4cd37934e4ec18ea9eb6818c1f88c93fd2ee1d",
     ".agents/skills/adr-issue-tracker/SKILL.md": "376c6838d86081865aeec2e22be8d0c06fec91286713751736ab761a2525369a",
     ".agents/skills/adr-issue-tracker/scripts/tracker_cli.py": "a377d28e60c0fad5a8459d5419a7386bc9fa72631490d9c5c237805f34db84ca",
