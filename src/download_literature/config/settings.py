@@ -3,7 +3,7 @@
 Loads settings once at startup into an immutable `AppConfig` so every other layer
 receives plain values instead of touching `os.environ`.
 
-Data lives OUTSIDE the project folder: `DATA_DIR` (default `~/project-data/download-literature`) holds
+Data lives OUTSIDE the project folder: `DATA_DIR` (default `~/Desktop/projects-data/literature-fetch`) holds
 input/, output/, needs_review/, state/, db/ and logs/. The project folder only holds code,
 docs and small test fixtures.
 """
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_DATA_DIR = "~/project-data/download-literature"
+DEFAULT_DATA_DIR = "~/Desktop/projects-data/literature-fetch"
 
 
 def load_dotenv_file(path: Path) -> None:
