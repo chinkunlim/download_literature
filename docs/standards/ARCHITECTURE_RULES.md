@@ -56,7 +56,7 @@ flowchart TD
 
 ## 3. Web API 規則（FastAPI）
 
-> 新專案的 HTTP 伺服器**一律使用 FastAPI**（`init_project.py --with api`）。`[project_rules] forbidden_imports` 預設禁止 `flask`；只有以維護模式遷移、已完工的舊專案可以保留 Flask。
+> 新專案的 HTTP 伺服器**一律使用 FastAPI**（母版的 `scripts/init_project.py --with api`）。`[project_rules] forbidden_imports` 預設禁止 `flask`；只有以維護模式遷移、已完工的舊專案可以保留 Flask。
 
 1. **結構**：路由在 `src/<pkg>/entrypoints/http/`，由 `create_app(config)` 組合 `APIRouter`；輸入輸出格式（pydantic）放 `schemas.py`。
 2. **只在邊界驗證**：請求進來先由 pydantic 模型驗證（錯誤自動 422），轉成 domain 物件後才交給 services；services 不碰 request / response。

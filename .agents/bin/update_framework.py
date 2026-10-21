@@ -18,6 +18,8 @@ Purpose:
 Usage:
     python3 scripts/agentctl.py update --from "/path/to/01 project_template" --dry-run
     python3 scripts/agentctl.py update --from "/path/to/01 project_template"
+    # From the template, for a project whose own copy of this script is older (v3.1 and before):
+    python3 .agents/bin/update_framework.py --from . --project "/path/to/project"
 """
 from __future__ import annotations
 
@@ -28,8 +30,10 @@ import shutil
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[2]  # .agents/bin/<script> -> project root
+ROOT = Path(__file__).resolve().parents[2]  # .agents/bin/<script> -> project root (`--project` overrides)
 sys.path.insert(0, str(ROOT / ".agents" / "lib"))
+# The template's own layout matches a project's; these files exist only in the template.
+TEMPLATE_MARKERS = (Path("scripts") / "init_project.py", Path(".agents") / "lib" / "framework_install.py")
 
 from project_config import load_config  # noqa: E402
 
@@ -43,7 +47,7 @@ def load_template_modules(template_dir: Path):
     Returns:
         Tuple of the `framework_install` module and the template's framework version.
     """
-    sys.path.insert(0, str(template_dir / "lib"))
+    sys.path.insert(0, str(template_dir / ".agents" / "lib"))
     import importlib
 
     for name in ("framework_install", "project_config"):
@@ -129,11 +133,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="從母版安全更新框架檔案（不覆蓋專案修改過的檔案）")
     parser.add_argument("--from", dest="template_dir", required=True, help="母版資料夾 (01 project_template)")
     parser.add_argument("--dry-run", action="store_true", help="只顯示會做什麼")
+    parser.add_argument("--project", help="要更新的專案（預設：這個腳本所在的專案）")
     args = parser.parse_args(argv)
 
+    global ROOT
+    if args.project:
+        ROOT = Path(args.project).expanduser().resolve()
     template_dir = Path(args.template_dir).expanduser().resolve()
-    if not (template_dir / "init_project.py").exists() or not (template_dir / "lib" / "framework_install.py").exists():
-        print(f"❌ 不是有效的母版資料夾（需 3.0 以上）：{template_dir}", file=sys.stderr)
+    if not all((template_dir / marker).exists() for marker in TEMPLATE_MARKERS):
+        print(f"❌ 不是有效的母版資料夾（需 3.2 以上）：{template_dir}", file=sys.stderr)
+        return 1
+    if ROOT == template_dir:
+        print("❌ 母版不能更新自己：框架檔案在母版就是最新版本。", file=sys.stderr)
         return 1
     installer, version = load_template_modules(template_dir)
     config = load_config(ROOT)

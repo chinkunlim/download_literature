@@ -1,5 +1,5 @@
 {
-  "_comment": "Skill tiers used by init_project.py and update_framework.py. tier=core: always installed; tier=stack: installed when the project's base stack or an add-on (web, gas) is listed in `stacks`; tier=optional: installed only with `--skills <name>` or when listed in [skills].enabled.",
+  "_comment": "Skill tiers used by the template's scripts/init_project.py and update_framework.py. tier=core: always installed; tier=stack: installed when the project's base stack or an add-on (web, gas) is listed in `stacks`; tier=optional: installed only with `--skills <name>` or when listed in [skills].enabled.",
   "skills": {
     "session-closeout": {
       "tier": "core",

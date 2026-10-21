@@ -404,7 +404,10 @@ def check_toolchain(fix: bool = False) -> list[tuple[str, str]]:
         if (ROOT / marker).exists():
             results.append(("OK", f"{tool} 已安裝") if shutil.which(tool) else ("WARN", f"{tool} 未安裝：{hint}"))
     lock = ROOT / ".agents" / "framework.lock"
-    results.append(("OK", "framework.lock 存在") if lock.exists() else ("WARN", "缺少 .agents/framework.lock（舊版專案，執行 agentctl update 後產生）"))
+    if (ROOT / "scripts" / "init_project.py").exists() and (ROOT / ".agents" / "lib" / "framework_install.py").exists():
+        results.append(("OK", "這是母版：框架檔案就是來源，不需要 framework.lock"))
+    else:
+        results.append(("OK", "framework.lock 存在") if lock.exists() else ("WARN", "缺少 .agents/framework.lock（舊版專案，執行 agentctl update 後產生）"))
     return results
 
 

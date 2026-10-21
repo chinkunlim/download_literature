@@ -1,4 +1,4 @@
-"""Shared install logic for `init_project.py` and `.agents/bin/update_framework.py`.
+"""Shared install logic for the template's `scripts/init_project.py` and `.agents/bin/update_framework.py`.
 
 Purpose:
     Defines in one place which template files a project receives, where they go,
@@ -8,7 +8,7 @@ Purpose:
     overwrite) from "file the project customised" (must not be overwritten).
 
 Main functions:
-    - `load_catalog()`        : read `skills/catalog.json`.
+    - `load_catalog()`        : read `.agents/skills/catalog.json`.
     - `select_skills()`       : core + stack-specific + explicitly requested skills.
     - `framework_file_map()`  : destination path -> template source path.
     - `install_files()`       : copy files and mark scripts executable.
@@ -26,6 +26,12 @@ import subprocess
 
 LOCK_RELATIVE_PATH = Path(".agents") / "framework.lock"
 SKIP_PARTS = {"upstream", "__pycache__", ".DS_Store", "node_modules"}
+# The template is laid out like the projects it creates, so a framework file has the same
+# relative path in both. These folders are copied as a whole (`.agents/skills/` per skill).
+FRAMEWORK_FOLDERS = (".agents/lib", ".agents/bin", ".agents/hooks", "docs/standards")
+FRAMEWORK_FILES = ("scripts/agentctl.py", ".agents/skills/catalog.json")
+# Files in those folders that belong to the template as a project, not to the framework.
+PROJECT_OWNED = {"docs/standards/PROJECT_RULES.md"}
 
 
 def load_catalog(template_root: Path) -> dict[str, dict]:
@@ -37,7 +43,7 @@ def load_catalog(template_root: Path) -> dict[str, dict]:
     Returns:
         Mapping of skill name -> metadata (`tier`, `stacks`, `trigger`, `command`).
     """
-    path = template_root / "skills" / "catalog.json"
+    path = template_root / ".agents" / "skills" / "catalog.json"
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8")).get("skills", {})
@@ -95,19 +101,18 @@ def framework_file_map(template_root: Path, skills: list[str]) -> dict[str, Path
         Dict of repo-relative destination path -> absolute source path.
     """
     mapping: dict[str, Path] = {}
-    folders = (("lib", ".agents/lib"), ("core/scripts", ".agents/bin"), ("core/hooks", ".agents/hooks"), ("standards", "docs/standards"))
-    for src_rel, dst_rel in folders:
-        for f in _iter_files(template_root / src_rel):
-            mapping[f"{dst_rel}/{f.relative_to(template_root / src_rel).as_posix()}"] = f
-    # The project's `scripts/` keeps only the agentctl launcher; framework scripts live in `.agents/bin/`.
-    mapping["scripts/agentctl.py"] = template_root / "core" / "entry" / "agentctl.py"
-    catalog_file = template_root / "skills" / "catalog.json"
-    if catalog_file.exists():
-        mapping[".agents/skills/catalog.json"] = catalog_file
+    for folder in FRAMEWORK_FOLDERS:
+        for f in _iter_files(template_root / folder):
+            mapping[(f.relative_to(template_root)).as_posix()] = f
+    for rel in FRAMEWORK_FILES:
+        if (template_root / rel).is_file():
+            mapping[rel] = template_root / rel
     for name in skills:
-        skill_dir = template_root / "skills" / name
+        skill_dir = template_root / ".agents" / "skills" / name
         for f in _iter_files(skill_dir):
-            mapping[f".agents/skills/{name}/{f.relative_to(skill_dir).as_posix()}"] = f
+            mapping[f.relative_to(template_root).as_posix()] = f
+    for rel in PROJECT_OWNED:
+        mapping.pop(rel, None)
     return mapping
 
 

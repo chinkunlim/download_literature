@@ -69,7 +69,7 @@ agy --version
 確認後：
 
 1. 把答案整理成 `docs/specs/NNN-<名稱>.md`（照 `_TEMPLATE.md`），重要取捨寫 ADR。
-2. 新專案：`python3 init_project.py --target <資料夾> --stack python --with api [web] [db] [ollama]`（或用母版網頁）。
+2. 新專案：`python3 scripts/init_project.py --target <資料夾> --stack python --with api [web] [db] [ollama]`（或用母版網頁）。
 3. 既有專案沒有 `api`：先問使用者，再依 [`ARCHITECTURE_RULES.md`](ARCHITECTURE_RULES.md) §3 加上 FastAPI、`entrypoints/mcp_server.py` 與各工具設定檔（參考新專案產生的檔案）。
 
 ---
