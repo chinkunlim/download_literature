@@ -64,6 +64,13 @@ flowchart TD
 4. **依賴當參數傳入**：設定、資料庫 session factory 透過 `create_app(...)` 參數或 `Depends` 注入，測試用 `TestClient(create_app(test_config, ...))`，不需要真的啟動伺服器。
 5. **錯誤**：預期的錯誤用 `HTTPException(status_code=..., detail=...)`；不要把例外訊息或堆疊直接回給使用者。
 6. **只綁 `127.0.0.1`**：`HTTP_HOST` 預設 `127.0.0.1`，不改成 `0.0.0.0`；API 文件在 `http://127.0.0.1:<port>/docs`。
+7. **給 AI 工具用（使用者要網頁時一律做到；動手前先依 [`LOCAL_AI_ENVIRONMENT.md`](LOCAL_AI_ENVIRONMENT.md) §2 確認需求）**：
+   - **一組 services、三個入口**：HTTP 路由、MCP 工具（`entrypoints/mcp_server.py`）、網頁。功能只寫在 `services`，入口只做轉換，三邊結果才會一致。
+   - **OpenAPI**：每個路由的函式名稱就是 operationId（`generate_unique_id_function`），docstring 寫清楚用途與參數；Open WebUI 可以直接把 `http://127.0.0.1:<port>` 加成 OpenAPI 工具伺服器。
+   - **MCP**：同一個伺服器在 `/mcp` 提供 Streamable HTTP；`uv run <name>-mcp` 提供 stdio。專案根目錄的 `.mcp.json`（Claude Code）、`opencode.json`（OpenCode）、`.agents/mcp_config.json`（Antigravity）、`.cursor/mcp.json`、`.vscode/mcp.json` 讓各工具打開專案就找得到；其他工具見 `docs/INTEGRATIONS.md`。
+   - **最低權限**：讀取的工具可直接呼叫；寫入、刪除、提交、部署的工具要有 `confirm: bool`，沒有使用者同意就拒絕並說明會做什麼。
+   - **只接受本機**：Host 只能是 127.0.0.1 / localhost（加上 `HTTP_ALLOWED_HOSTS`）；網頁送出的修改請求只接受本專案與 `HTTP_ALLOWED_ORIGINS`（預設 Open WebUI `http://127.0.0.1:8080`，並開放它的 CORS）。
+   - **stdio 的 MCP 不可 print 到 stdout**（stdout 是 MCP 的通道）；log 一律走 logger（stderr 與 `DATA_DIR/logs/`）。
 
 ## 4. 資料庫規則（SQLAlchemy 2.0 + Alembic + SQLite）
 
@@ -76,7 +83,7 @@ flowchart TD
 
 ## 5. 資料與程式分離
 
-1. **資料不放在專案資料夾內**：輸入、輸出、隔離區、進度狀態、SQLite、log 都放在 `.env` 的 `DATA_DIR`（預設 `~/project-data/<專案>`，可以是外接硬碟）。標準結構：`input/`、`output/`、`needs_review/`、`state/`、`db/`、`logs/`。
+1. **資料不放在專案資料夾內**：輸入、輸出、隔離區、進度狀態、SQLite、log 都放在 `.env` 的 `DATA_DIR`（預設相對路徑 `../../projects-data/<專案>`，從專案資料夾算起；外接硬碟時寫絕對路徑）。標準結構：`input/`、`output/`、`needs_review/`、`state/`、`db/`、`logs/`。
 2. **程式只透過 config 取得路徑**：用 `AppConfig.data_dir`、`input_dir`、`output_dir`、`needs_review_dir`、`state_dir`、`logs_dir`，其他層收參數；不要寫死 `data/...` 或絕對路徑。
 3. **專案內只放程式、文件和小型測試樣本**（`tests/fixtures/`、`evals/cases/`，每個檔案 ≤ 1 MB）。pre-commit 會擋下 PDF、EPUB、壓縮檔、影音、資料庫與超過 10 MB 的檔案（文件型專案可設 `[quality] block_data_files = false`）。
 4. **批次處理不中斷**：單一項目失敗或信心度不足時，寫入 `needs_review/`（附原因），繼續處理下一個。

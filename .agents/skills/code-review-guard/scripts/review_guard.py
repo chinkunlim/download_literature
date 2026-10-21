@@ -184,16 +184,19 @@ def _python_params(node: ast.AST) -> list[str]:
 
 
 def _param_documented(doc: str, name: str) -> bool:
-    """Check whether a docstring documents a parameter (`name:` or `name (type):`).
+    """Check whether a docstring documents a parameter (`name:`, `name (type):` or Sphinx `:param name:`).
 
     Args:
         doc: The docstring text.
         name: Parameter name.
 
     Returns:
-        True when a line starts with the parameter name followed by `:` or `(`.
+        True when a line starts with the parameter name followed by `:` or `(`, or with `:param name:`
+        (the form Open WebUI tools need).
     """
-    return re.search(rf"^\s*\**{re.escape(name)}\s*(\([^)]*\))?\s*:", doc, flags=re.M) is not None
+    google = re.search(rf"^\s*\**{re.escape(name)}\s*(\([^)]*\))?\s*:", doc, flags=re.M)
+    sphinx = re.search(rf"^\s*:param\s+(\w+\s+)?{re.escape(name)}\s*:", doc, flags=re.M)
+    return google is not None or sphinx is not None
 
 
 def python_docstring_issues(tree: ast.Module, rel: str) -> list[dict]:

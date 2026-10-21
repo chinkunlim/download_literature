@@ -37,7 +37,7 @@ python3 scripts/agentctl.py check
 
 | 類別 | 等級 | 規則（門檻在 `[quality]`） |
 |---|---|---|
-| 註解 | CRITICAL | 檔案開頭說明；每個函數/類別有說明；每個參數都有寫（Python `Args:`、JS `@param`；Go/Rust 需 `//` / `///`）；HTML 在 `<!DOCTYPE>` 後要有 `<!-- -->`、CSS 開頭要有 `/* */`。測試檔不檢查。`require_docstrings = false` 可關閉 |
+| 註解 | CRITICAL | 檔案開頭說明；每個函數/類別有說明；每個參數都有寫（Python `Args:`，或 Open WebUI 工具用的 `:param name:`；JS `@param`；Go/Rust 需 `//` / `///`）；HTML 在 `<!DOCTYPE>` 後要有 `<!-- -->`、CSS 開頭要有 `/* */`。測試檔不檢查。`require_docstrings = false` 可關閉 |
 | 分層 | CRITICAL | 只有 `env_access_layers`（預設 `config`）可讀環境變數；import 方向由 `agentctl check` 的依賴圖檢查 |
 | Log | CRITICAL | Python 在 `[quality] print_allowed_layers`（預設 `entrypoints`）以外不可 `print`，改用 `logging.getLogger(__name__)` |
 | 檔案大小 | CRITICAL / 警告 | 超過 `hard_max_file_lines` 為 CRITICAL（拆成子模組）；超過 `max_file_lines` 為警告 |

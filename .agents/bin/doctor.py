@@ -113,8 +113,32 @@ DATA_SUBDIRS = ("input", "output", "needs_review", "state", "db", "logs")
 IN_PROJECT_DATA = ("data", "input", "output")
 
 
+PROJECT_FILE_WINS = ("DATA_DIR",)  # same rule as config/settings.py: the project's .env beats the shell
+
+
+def file_value(name: str, key: str) -> str:
+    """Read one key from a project env file.
+
+    Args:
+        name: `.env` or `.env.example`.
+        key: Variable name.
+
+    Returns:
+        The value, or an empty string.
+    """
+    path = ROOT / name
+    for line in path.read_text(encoding="utf-8").splitlines() if path.exists() else []:
+        k, _, v = line.partition("=")
+        if k.strip() == key and v.strip():
+            return v.strip().strip("\"'")
+    return ""
+
+
 def env_value(key: str) -> str:
-    """Read a setting from the environment, `.env`, or `.env.example` (in that order).
+    """Read a setting the way the project does: environment, then `.env`, then `.env.example`.
+
+    For keys in `PROJECT_FILE_WINS` the project's `.env` comes first, so a variable inherited
+    from the shell (e.g. Open WebUI's `DATA_DIR`) cannot redirect the project.
 
     Args:
         key: Variable name, e.g. `DATA_DIR`.
@@ -122,16 +146,9 @@ def env_value(key: str) -> str:
     Returns:
         The value, or an empty string when it is not defined anywhere.
     """
-    if os.environ.get(key):
-        return os.environ[key]
-    for name in (".env", ".env.example"):
-        path = ROOT / name
-        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-        for line in lines:
-            k, _, v = line.partition("=")
-            if k.strip() == key and v.strip():
-                return v.strip().strip("\"'")
-    return ""
+    if key in PROJECT_FILE_WINS and file_value(".env", key):
+        return file_value(".env", key)
+    return os.environ.get(key) or file_value(".env", key) or file_value(".env.example", key)
 
 
 def check_data_dir(fix: bool) -> list[tuple[str, str]]:
@@ -146,10 +163,14 @@ def check_data_dir(fix: bool) -> list[tuple[str, str]]:
     raw = env_value("DATA_DIR")
     if not raw:
         return []
-    data_dir = Path(raw).expanduser().resolve()
+    inherited = os.environ.get("DATA_DIR", "")
+    ignored = [("OK", f"已忽略終端機的 DATA_DIR={inherited}（例如 Open WebUI 設定的），使用專案 .env 的設定")] \
+        if inherited and file_value(".env", "DATA_DIR") and inherited != raw else []
+    data_dir = Path(raw).expanduser()
+    data_dir = (data_dir if data_dir.is_absolute() else ROOT / data_dir).resolve()  # relative = from the project folder
     results = []
     if data_dir == ROOT or ROOT in data_dir.parents:
-        results.append(("WARN", f"DATA_DIR 在專案資料夾內（{data_dir}）：資料應放在專案外，例如 ~/project-data/{ROOT.name}"))
+        results.append(("WARN", f"DATA_DIR 在專案資料夾內（{data_dir}）：資料應放在專案外，例如 ../../projects-data/{ROOT.name}"))
     if not data_dir.exists() and fix:
         for sub in DATA_SUBDIRS:
             (data_dir / sub).mkdir(parents=True, exist_ok=True)
@@ -162,7 +183,7 @@ def check_data_dir(fix: bool) -> list[tuple[str, str]]:
     stray = [n for n in IN_PROJECT_DATA if (ROOT / n).is_dir() and any(p.is_file() for p in (ROOT / n).rglob("*"))]
     if stray:
         results.append(("WARN", f"專案內有資料資料夾 {', '.join(stray)}/：請搬到 DATA_DIR（{data_dir}）"))
-    return results
+    return ignored + results
 
 
 def check_env_file(fix: bool) -> list[tuple[str, str]]:

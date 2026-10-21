@@ -100,6 +100,7 @@ download_literature/
 │   │   ├── CODING_PRINCIPLES.md            # 註解規範、Karpathy 原則、SOLID、DRY、Atomic
 │   │   ├── ENVIRONMENT_AND_DEPENDENCIES.md # uv / pnpm / Brewfile / 127.0.0.1 環境與依賴規範
 │   │   ├── GIT_AND_VERSIONING.md           # Local Git、變更片段、發布與收尾規範
+│   │   ├── LOCAL_AI_ENVIRONMENT.md
 │   │   ├── MULTI_AGENT_COLLABORATION.md    # Agent 輪流接力：開工、交接、收尾與溯源
 │   │   ├── PROJECT_RULES.md
 │   │   └── TESTING_AND_QUALITY.md          # 測試金字塔與 DoD 驗收清單
