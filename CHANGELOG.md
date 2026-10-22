@@ -22,6 +22,9 @@ All notable changes to **download_literature** are documented here
 - fix(literature): wait for a stable page after bot checks before fetching (TASK-001) (`TASK-001`, by `@claude-code`)
 - fix(literature): keep PDFs on refresh, close interrupted jobs, remove template leftovers and update docs (by `@claude-code`)
 
+### Documentation
+- docs: update repository clone URL to literature-fetch (by `@antigravity`)
+
 ## [0.1.0] - 2026-10-20
 ### Added
 - Initial project scaffold (framework v3.1.0).

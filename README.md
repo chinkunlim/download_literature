@@ -46,7 +46,7 @@ uv run literature-web
 1. 取得程式（已經在本機就略過）
 
 ```bash
-git clone https://github.com/chinkunlim/download_literature.git && cd download_literature
+git clone https://github.com/chinkunlim/literature-fetch.git && cd literature-fetch
 ```
 
 2. 檢查並修復環境：啟用 git hook、建立 `.env`、建立 DATA_DIR、檢查 uv（只修這個專案，不安裝全域工具）
